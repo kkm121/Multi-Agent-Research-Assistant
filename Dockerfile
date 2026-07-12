@@ -27,4 +27,4 @@ ENV PORT=7860
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the application via Uvicorn (which now hosts both FastAPI and Chainlit)
-CMD uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+CMD ["sh", "-c", "python init_chainlit_db.py && uvicorn backend.main:app --host 0.0.0.0 --port 7860"]
