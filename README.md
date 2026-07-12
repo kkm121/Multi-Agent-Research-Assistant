@@ -50,7 +50,7 @@ The platform features a persistent chat interface with full multi-user authentic
 | <a href="./login.png"><img src="./login.png" width="450" alt="Login Interface"></a> | <a href="./chat.png"><img src="./chat.png" width="450" alt="Sample Chat Session"></a> |
 
 > [!IMPORTANT] 
-> **Handling PDF Context Injection**: Users can upload raw PDF documents directly into the Chainlit chat. The system's custom chunking engine parses the PDF, bypassing the Tavily web search, and natively forces the AI personas to extract their foundational facts directly from the provided source material, ensuring absolute privacy and bespoke domain knowledge.
+> **Handling PDF Context Injection**: Users can upload raw PDF documents directly into the Chainlit chat. The system's custom chunking engine parses the PDF, bypassing the Semantic Scholar / DuckDuckGo web search, and natively forces the AI personas to extract their foundational facts directly from the provided source material, ensuring absolute privacy and bespoke domain knowledge.
 
 <br>
 
@@ -92,7 +92,7 @@ To ensure full transparency, here is the exact logical flow of the agentic pipel
 - **Justification**: This mirrors the Stanford STORM methodology. By approaching a topic from 3 completely different expert angles (e.g., an Economist, a Historian, and a Technologist), the system escapes echo-chambers and ensures comprehensive topical coverage.
 
 ### 2. Deep Research Phase (Concurrent Extraction)
-- **Action**: Each persona generates exactly <kbd>1</kbd> precise search query. The system queries Tavily (or the uploaded PDF) and extracts exactly <kbd>1</kbd> high-yield factual statement per source using structured outputs.
+- **Action**: Each persona generates exactly <kbd>1</kbd> precise search query. The system queries Semantic Scholar (with a DuckDuckGo fallback) or the uploaded PDF, and extracts exactly <kbd>1</kbd> high-yield factual statement per source using structured outputs.
 - **Justification**: The strict `3x1x1` configuration drastically reduces API overhead and generation latency while maintaining high precision. We force the AI to return Pydantic `FactList` objects rather than raw text to ensure downstream programmatic integrity.
 
 ### 3. Synthesis Phase
@@ -146,9 +146,9 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory and add your API keys:
 ```ini
 GROQ_API_KEY=your_groq_key
-TAVILY_API_KEY=your_tavily_key
 SAMBANOVA_API_KEY=your_sambanova_key
 CEREBRAS_API_KEY=your_cerebras_key
+SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_key
 CHAINLIT_AUTH_SECRET=your_generated_secret
 ```
 
