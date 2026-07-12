@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/badge/AI-LangGraph-green.svg" alt="LangGraph">
   <img src="https://img.shields.io/badge/UI-Chainlit-orange.svg" alt="Chainlit">
   <img src="https://img.shields.io/badge/Backend-FastAPI-red.svg" alt="FastAPI">
+  <a href="https://multi-agent-research-assistant-kbzb.onrender.com"><img src="https://img.shields.io/badge/Live_Demo-Render-brightgreen.svg"></a>
   <a href="#local-development-setup"><img src="https://img.shields.io/badge/Setup-Requirements-lightgrey.svg"></a>
 </p>
 
