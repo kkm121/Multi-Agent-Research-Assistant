@@ -1,0 +1,13 @@
+.myvenv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+chainlit.db
+.git
+.gitignore
+scratch/

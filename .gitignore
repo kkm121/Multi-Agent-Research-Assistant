@@ -1,0 +1,35 @@
+# Environments
+.env
+.venv
+.myvenv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Database
+*.sqlite
+*.db
+sqlite3.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Logs
+logs/
+*.log
+
+# Chainlit
+.chainlit/
+
+# Evaluation Results
+eval_results.txt
+login.png
+chat.png
