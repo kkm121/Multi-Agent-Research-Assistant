@@ -9,6 +9,8 @@
   <a href="#local-development-setup"><img src="https://img.shields.io/badge/Setup-Requirements-lightgrey.svg"></a>
 </p>
 
+> 🚀 **Live Demo:** Try the application right now at [https://multi-agent-research-assistant-kbzb.onrender.com](https://multi-agent-research-assistant-kbzb.onrender.com)
+
 This repository hosts a highly advanced, cloud-native platform that autonomously conducts deep research and synthesizes comprehensive academic reports. The system acts as an orchestrated **Agentic Pipeline**, utilizing the Stanford STORM methodology combined with the Reflexion pattern to gather facts, cross-examine data, and actively eliminate hallucinations before delivering the final output to the user.
 
 ---
