@@ -74,16 +74,6 @@ def get_document_chunks(text: str):
     index.add(embeddings)
     _document_cache[doc_hash] = (chunks, index)
     return (_document_cache[doc_hash], model)
-    words = text.split()
-    chunks = [" ".join(words[i : i + 300]) for i in range(0, len(words), 200)]
-    if not chunks:
-        return (([], None), model)
-    embeddings = model.encode(chunks).astype("float32")
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(embeddings)
-    _document_cache[doc_hash] = (chunks, index)
-    return (_document_cache[doc_hash], model)
 
 
 def get_groq_client():
