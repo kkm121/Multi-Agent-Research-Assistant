@@ -6,12 +6,14 @@ import urllib.parse
 import aiohttp
 import os
 
-data_layer = SQLAlchemyDataLayer(conninfo="sqlite+aiosqlite:///chainlit.db")
-
+_data_layer = None
 
 @cl.data_layer
 def get_data_layer():
-    return data_layer
+    global _data_layer
+    if _data_layer is None:
+        _data_layer = SQLAlchemyDataLayer(conninfo="sqlite+aiosqlite:///chainlit.db")
+    return _data_layer
 
 
 import uuid
@@ -20,7 +22,8 @@ import uuid
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
     print(f"[AUTH] Authentication attempt for username: '{username}'")
-    user = await data_layer.get_user(identifier=username)
+    dl = get_data_layer()
+    user = await dl.get_user(identifier=username)
     if user:
         stored_password = user.metadata.get("password")
         if stored_password is None:
@@ -34,7 +37,7 @@ async def auth_callback(username: str, password: str):
             return None
     else:
         print(f"[AUTH] Auto-registering new user '{username}'")
-        user = await data_layer.create_user(
+        user = await dl.create_user(
             cl.User(
                 identifier=username, metadata={"role": "user", "password": password}
             )
