@@ -1,12 +1,10 @@
-# Multi-Agent Research Assistant
+<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 50vh; text-align: center;">
+    <h1 style="font-size: 32px; font-weight: 500; margin-bottom: 40px; color: #ececec;">What can I help with?</h1>
+</div>
 
-Ask a research question and a panel of AI experts will search the web and academic databases
-(OpenAlex, arXiv, Semantic Scholar, Wikipedia), extract evidence, write a report, and fact-check
-every claim against its sources before you see it.
-
-- **Quick research**: 3 experts, about 1 minute
-- **Deep research**: 4 experts, 2 search rounds and a fact-check revision, about 3 minutes
-- Attach a **PDF or text file** to research it alongside the web
-
-Every citation in the report links to a real source the agents read. Citations that don't match a
-source are removed automatically.
+<style>
+/* Remove the default Chainlit welcome padding */
+.css-1e6z575, .css-1h2p9g {
+    padding: 0 !important;
+}
+</style>

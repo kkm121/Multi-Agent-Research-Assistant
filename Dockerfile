@@ -1,22 +1,30 @@
-FROM python:3.12-slim
+# Use an official lightweight Python image
+FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PORT=7860
-
+# Set the working directory
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Install system dependencies (needed for some Python packages)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy the requirements file and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create the chainlit local data directory to prevent permission errors
+RUN mkdir -p /.chainlit && chmod 777 /.chainlit
+
+# Copy the rest of the application code
 COPY . .
 
-RUN useradd --create-home --uid 1000 app && chown -R app:app /app
-USER app
-
+# Expose port 7860 for Hugging Face Spaces
 EXPOSE 7860
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\",\"7860\")}/api/health')"
 
-CMD ["sh", "-c", "python init_chainlit_db.py && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
+# Set environment variables for the port and python unbuffered mode
+ENV PORT=7860
+ENV PYTHONUNBUFFERED=1
+
+# Command to run the application via Uvicorn (which now hosts both FastAPI and Chainlit)
+CMD ["sh", "-c", "python init_chainlit_db.py && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-7860}"]

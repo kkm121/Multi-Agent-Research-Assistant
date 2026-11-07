@@ -11,12 +11,3 @@ chainlit.db
 .git
 .gitignore
 scratch/
-.venv/
-.chainlit/translations/
-.files/
-tests/
-docs/
-
-server.log
-eval_results.json
-.pytest_cache/
