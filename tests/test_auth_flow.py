@@ -48,6 +48,8 @@ def test_login_flow(tmp_path, monkeypatch):
 def test_owner_accounts_block_everyone_else(tmp_path, monkeypatch):
     from frontend.auth import hash_password
 
+    monkeypatch.setenv("ALLOW_SIGNUP", "false")
+
     db = tmp_path / "o.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db.as_posix()}")
     monkeypatch.setenv("CHAINLIT_AUTH_SECRET", "x" * 64)
@@ -91,3 +93,46 @@ def test_api_requires_key(monkeypatch):
     assert client.get("/api/providers", headers={"X-API-Key": "wrong"}).status_code == 401
     assert client.get("/api/providers", headers={"X-API-Key": "k" * 32}).status_code == 200
     config.get_settings.cache_clear()
+
+
+def test_owner_reserved_while_others_sign_up(tmp_path, monkeypatch):
+    from frontend.auth import hash_password
+
+    db = tmp_path / "p.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db.as_posix()}")
+    monkeypatch.setenv("CHAINLIT_AUTH_SECRET", "x" * 64)
+    monkeypatch.setenv("AUTH_USERS", f"owner1:{hash_password('owner-pass-123')}")
+    monkeypatch.setenv("ALLOW_SIGNUP", "true")
+    import init_chainlit_db
+
+    init_chainlit_db.main()
+    from ai_core import config
+
+    config.get_settings.cache_clear()
+    app = importlib.import_module("frontend.app")
+    app._data_layer = None
+
+    async def go():
+        assert (await app.auth_callback("guest_one", "guest-pass-1")).identifier == "guest_one"
+        assert await app.auth_callback("guest_one", "wrong-pass-1") is None
+        assert await app.auth_callback("owner1", "attacker-pass-1") is None
+        assert await app.auth_callback("OWNER1", "attacker-pass-1") is None
+        assert (await app.auth_callback("owner1", "owner-pass-123")).identifier == "owner1"
+
+    asyncio.run(go())
+    config.get_settings.cache_clear()
+
+
+def test_daily_usage_counter(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{(tmp_path / 'u.db').as_posix()}")
+    from frontend import auth
+
+    async def go():
+        assert await auth.used_today("guest", "2026-11-07") == 0
+        await auth.add_usage("guest", "2026-11-07", 1)
+        await auth.add_usage("guest", "2026-11-07", 2)
+        assert await auth.used_today("guest", "2026-11-07") == 3
+        assert await auth.used_today("guest", "2026-11-08") == 0
+        assert await auth.used_today("other", "2026-11-07") == 0
+
+    asyncio.run(go())

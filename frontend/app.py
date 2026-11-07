@@ -54,11 +54,14 @@ async def auth_callback(username: str, password: str):
         return None
     dl = get_data_layer()
     owners = get_settings().owner_accounts()
-    if owners:
-        hashed = owners.get(username)
-        if not hashed or not auth.verify_password(password, hashed):
+    if username in owners:
+        if not auth.verify_password(password, owners[username]):
             return None
         return await dl.get_user(username) or await dl.create_user(cl.User(identifier=username, metadata={"role": "owner"}))
+    if username.lower() in {o.lower() for o in owners}:
+        return None
+    if owners and not get_settings().allow_signup:
+        return None
 
     stored = await auth.get_hash(username)
     if stored:
@@ -247,6 +250,29 @@ async def on_message(message: cl.Message):
     await save_memory(memory)
 
 
+async def within_daily_limit(units: int) -> bool:
+    user = cl.user_session.get("user")
+    if user is None or user.identifier in get_settings().owner_accounts():
+        return True
+    limit = get_settings().daily_research_limit
+    if limit <= 0:
+        return True
+    day = datetime.utcnow().strftime("%Y-%m-%d")
+    used = await auth.used_today(user.identifier, day)
+    if used + units > limit:
+        await cl.Message(
+            content=(
+                f"You've used your {limit} research {'run' if limit == 1 else 'runs'} for today "
+                "(Deep research counts as 2). "
+                "You can still ask follow-up questions about earlier reports in your chats. "
+                "The limit resets at midnight UTC."
+            )
+        ).send()
+        return False
+    await auth.add_usage(user.identifier, day, units)
+    return True
+
+
 async def research_turn(message: cl.Message, memory: Memory, topic: str, use_previous: bool = False):
     document_text, document_name = "", "document"
     for el in message.elements or []:
@@ -263,6 +289,8 @@ async def research_turn(message: cl.Message, memory: Memory, topic: str, use_pre
 
     profile = cl.user_session.get("chat_profile") or "Quick research"
     depth = "deep" if profile.startswith("Deep") else "quick"
+    if not await within_daily_limit(2 if depth == "deep" else 1):
+        return
     started = datetime.now()
 
     tasks = cl.TaskList(status="Researching…")

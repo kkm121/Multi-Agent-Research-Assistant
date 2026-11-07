@@ -4,7 +4,7 @@ import pytest
 
 from ai_core.config import Settings
 
-_KEYS = [f.upper() for f in Settings.model_fields if f.endswith(("_api_key", "_models")) or f in ("provider_order", "auth_users", "api_key", "allow_signup")]
+_KEYS = [f.upper() for f in Settings.model_fields if f.endswith(("_api_key", "_models")) or f in ("provider_order", "auth_users", "api_key", "allow_signup", "daily_research_limit")]
 
 
 @pytest.fixture(autouse=True)

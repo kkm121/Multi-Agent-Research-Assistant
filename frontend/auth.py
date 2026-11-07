@@ -53,3 +53,30 @@ async def set_hash(identifier: str, password: str) -> None:
             (identifier, hash_password(password)),
         )
         await db.commit()
+
+
+_USAGE_DDL = (
+    'CREATE TABLE IF NOT EXISTS usage_daily ("identifier" TEXT NOT NULL, "day" TEXT NOT NULL, '
+    '"units" INTEGER NOT NULL, PRIMARY KEY ("identifier", "day"))'
+)
+
+
+async def used_today(identifier: str, day: str) -> int:
+    async with aiosqlite.connect(_db_path()) as db:
+        await db.execute(_USAGE_DDL)
+        async with db.execute(
+            'SELECT "units" FROM usage_daily WHERE "identifier" = ? AND "day" = ?', (identifier, day)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else 0
+
+
+async def add_usage(identifier: str, day: str, units: int) -> None:
+    async with aiosqlite.connect(_db_path()) as db:
+        await db.execute(_USAGE_DDL)
+        await db.execute(
+            'INSERT INTO usage_daily ("identifier", "day", "units") VALUES (?, ?, ?) '
+            'ON CONFLICT("identifier", "day") DO UPDATE SET "units" = "units" + excluded."units"',
+            (identifier, day, units),
+        )
+        await db.commit()

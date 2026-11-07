@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     allow_signup: bool = True
     auth_users: str = ""
     api_key: str = ""
+    daily_research_limit: int = 10
     max_revisions: int = 1
 
     def provider_key(self, provider: str) -> str:

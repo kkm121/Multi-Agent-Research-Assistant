@@ -45,7 +45,7 @@ before you see it. It runs entirely on **free, no-credit-card APIs** and fits in
 | PDF RAG | `bge-m3` + torch + FAISS (~2.5 GB RAM, OOMs on free hosts) | In-process **BM25**: zero model downloads, milliseconds |
 | Orchestration | LangGraph 0.0.x, personas in threads | LangGraph 1.2 with **`Send` fan-out** per persona and custom stream events |
 | UI ↔ backend | Chainlit called its own server over HTTP | Chainlit runs the graph in-process; REST/SSE API kept for external clients |
-| Auth | Plaintext passwords sent to the browser; users with no password could log in with **any** password; REST API open to anyone | Salted **scrypt** hashes; optional **private mode** (`AUTH_USERS`) where only your accounts exist and nobody can sign up; REST API requires an `X-API-Key`; other users can never open your chats |
+| Auth | Plaintext passwords sent to the browser; users with no password could log in with **any** password; REST API open to anyone | Salted **scrypt** hashes; reserved owner accounts (`AUTH_USERS`), open signup or invite-only, per-user daily research limit; REST API requires an `X-API-Key`; other users can never open your chats |
 | Thread history | Silently broken on SQLite (list binding error) | Fixed via a small data-layer adapter |
 | UI | Default Chainlit | ChatGPT-style dark theme plus a light theme, research profiles, starters, live task list, citation chips, downloadable Markdown report, "Go deeper" action |
 | Image | torch, sentence-transformers, FAISS, ragas, langchain-* | No ML frameworks; all deps pinned; non-root; health check |
@@ -152,16 +152,21 @@ Pushing to the branch Render watches (`main`) triggers an automatic redeploy whe
 
 **Hugging Face Spaces**: Docker Space, add the keys as *Secrets*.
 
-**Private mode (recommended for a personal deployment).** Create your account entry and set it as
-`AUTH_USERS` on the host. Only those accounts can log in, nobody can sign up, and because the
-credentials live in the environment they survive redeploys:
+**Accounts.** Create your own owner entry and set it as `AUTH_USERS` on the host. Owner accounts
+are reserved (nobody can register that name), have no usage limit, and survive redeploys because
+the credentials live in the environment:
 
 ```bash
 python scripts/create_account.py
 ```
 
-> On free hosts with an ephemeral disk, the SQLite file (chat history) is reset on every redeploy.
-> With `AUTH_USERS` set, your login keeps working; only old chats are lost.
+| Setting | Who can use the app |
+|---|---|
+| `ALLOW_SIGNUP=true` (default) | Anyone can create their own account; each sees only their own chats; non-owners get `DAILY_RESEARCH_LIMIT` research runs per day (default 10, Deep counts as 2, follow-ups are free) |
+| `ALLOW_SIGNUP=false` | Invite-only: only the `AUTH_USERS` accounts can log in |
+
+> On free hosts with an ephemeral disk, the SQLite file (chat history and self-registered accounts)
+> is reset on every redeploy. Owner accounts in `AUTH_USERS` keep working; other users sign up again.
 
 ## API
 
