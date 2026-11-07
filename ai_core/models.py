@@ -40,7 +40,14 @@ class QueryPlan(BaseModel):
     queries: list[str] = Field(description="Concise search-engine queries (3-8 words each).")
     mode: Literal["web", "academic", "both"] = Field(
         default="both",
-        description="'academic' for scientific topics, 'web' for news/products/current events, else 'both'.",
+        description=(
+            "'academic' only for narrow technical questions answered by papers; 'web' for news, products or "
+            "current events; 'both' for explanatory questions (how something works, overviews) and anything mixed."
+        ),
+    )
+    recent: bool = Field(
+        default=False,
+        description="True if the topic asks about recent, latest, current or new developments.",
     )
 
 

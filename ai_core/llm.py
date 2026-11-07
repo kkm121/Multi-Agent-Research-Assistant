@@ -91,7 +91,7 @@ class LLMRouter:
         self._providers: list[_Provider] = []
         for name in self.settings.configured_providers():
             client = AsyncOpenAI(
-                api_key=self.settings.api_key(name),
+                api_key=self.settings.provider_key(name),
                 base_url=BASE_URLS[name],
                 timeout=self.settings.llm_timeout_s,
                 max_retries=0,

@@ -88,13 +88,13 @@ Model IDs are env-configurable; `scripts/check_providers.py` verifies each one l
 ### Live verification with real keys (2026-11-07)
 
 - Probed every available key with live chat calls:
-  - Gemini ✅, Groq ✅, OpenRouter ✅, NVIDIA ✅ (only `mistral-large-4` answers; others 404/timeout)
-  - **Cerebras ❌ 402 Payment required on all keys** (confirms the July 2026 free-tier change)
-  - **SambaNova ❌ 401 on every key**
-  - Mistral ⚠️ 429 on every key (account-level quota) — kept as last fallback
+  - Working: Gemini, Groq, OpenRouter, NVIDIA (only `mistral-large-4` answers; others 404/timeout)
+  - **Cerebras: 402 Payment required on all keys** (confirms the July 2026 free-tier change)
+  - **SambaNova: 401 on every key**
+  - Mistral: 429 on every key (account-level quota) — kept as last fallback
   - GitHub Models: retired 2026-07-30 → provider removed
   - `gemini-2.5-flash-lite` → 404 "no longer available"; Groq `llama-3.1-8b-instant` gone → defaults replaced
-  - Tavily ✅, Jina ✅, Semantic Scholar ✅ with key
+  - Tavily, Jina and Semantic Scholar (with key) working
 - One key per provider is used. Multiple keys from separate accounts were deliberately **not** rotated
   (providers' terms generally forbid multiplying free quota across accounts).
 - **Bug found & fixed**: `instructor` wraps provider errors in `InstructorRetryException`, so the router never
@@ -121,3 +121,61 @@ Model IDs are env-configurable; `scripts/check_providers.py` verifies each one l
 - Downloadable `.md` attachment is shown live but not persisted in resumed threads (Chainlit needs blob
   storage for elements); the report text itself is persisted.
 - Chainlit logs a harmless `chat_profiles was never awaited` warning from its own config-override path.
+
+## Round 2 (2026-11-07): feedback from live use
+
+Live test on the deployed site exposed three behaviours, all reproduced locally before fixing:
+
+| Message | v2.0 behaviour | Cause |
+|---|---|---|
+| "What are the recent advancements in AI" | Grounded but obscure sources (Husformer, hyperspectral imaging) | OpenAlex keyword relevance on broad queries; no reranking or recency |
+| "Could you repeat the prev response again" | New unrelated report on "provenance and user frustration" | No chat memory; every message treated as a new topic |
+| "Compare the prev findings with bio-science" | Generic multi-omics report, no comparison | Earlier findings never reached the pipeline |
+
+Changes:
+- [x] Intent router (research / follow-up / repeat / chat) with query rewriting
+- [x] Per-thread memory (turns, reports, facts, source excerpts) persisted in thread metadata
+- [x] Follow-ups answered from stored evidence with hybrid retrieval and verified citations
+- [x] Comparisons seed the new run with earlier facts
+- [x] Hybrid retrieval: BM25 + Gemini embeddings (768-d) fused with Reciprocal Rank Fusion; top 8 of all candidates
+- [x] Recency filter (OpenAlex, arXiv, Semantic Scholar, Tavily) for recent/latest questions
+- [x] Private mode `AUTH_USERS`; REST API requires `X-API-Key`; orphan-account claim blocked in private mode
+- [x] Emojis removed from code and UI
+- [x] Themes: v1 Chainlit dark greys as dark mode, warm-white/indigo as light mode
+
+Bugs found while verifying:
+- Chainlit persists `user_session` into thread metadata on disconnect and turns non-serialisable values into
+  `None`, which its `update_thread` treats as delete. Storing the `Memory` object under `memory` erased the
+  saved memory every time. Fixed by keeping the object under a separate key and a JSON copy under `memory`.
+  Test runs Chainlit's real `clean_metadata`.
+- Chainlit redacts all thread metadata above 1 MB; memory now compacts to <= 700 KB (tested).
+- Settings field `api_key` clashed with a helper method of the same name (caught by tests).
+
+Verification:
+- Exact replay of the three messages locally: recent-AI sources now 2024-2026 and on topic; "repeat" returns
+  the previous report; comparison carried 16 earlier facts and produced a 23-reference comparison.
+- Reload test: memory persisted (2 turns, 16 facts, 12 sources, ~55 KB); follow-up after reload answered
+  from stored evidence with 2 real citations.
+- Account isolation attack test: second account and anonymous user cannot open, list, share or delete
+  another user's thread (401). REST API without key: 403/401.
+- `pytest`: 30 passed.
+
+### v1 vs v2 benchmark (2026-11-07)
+
+4 questions (GLP-1, solid-state batteries, CRISPR, recent AI), same keys, one strict judge
+(re-fetched sources; abstracts via OpenAlex/Semantic Scholar/arXiv APIs, pages via Jina).
+
+- v1 as deployed: 0/4 reports (Groq model retired, Cerebras 402, SambaNova 401).
+- v1 patched (working Groq model + JSON mode): 3/4 reports; fact extraction still failed, placeholder
+  "System Alert: Rate Limit Exceeded" fact injected, reports written from model memory; references
+  22% real on average (fake `system.alert/ratelimit`, `example.com` links); faithfulness 0%; relevance 2.3/5.
+- v2, two runs (8 reports): 8/8 produced; 100% real references; faithfulness 73% average (42-100%);
+  relevance 4.9/5.
+- Judge bug found and fixed during benchmarking: Semantic Scholar pages are JS-rendered, so fresh fetches
+  returned no text and scored 0%; now uses the S2/OpenAlex/arXiv APIs; unfetchable sources reported
+  separately as unverifiable.
+- v2 issues found by the benchmark and fixed: CRISPR panel skipped "how it works" (relevance 2/5) ->
+  panel must cover every part of the question (now 4-5/5); writer embellishment -> writer and fact-checker
+  prompts forbid unstated details; low citation coverage -> drafts with <50% cited sentences rejected;
+  one search engine dominating -> max 4 sources per engine.
+- `pytest`: 30 passed.

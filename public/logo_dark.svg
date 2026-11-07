@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="236" height="40" viewBox="0 0 236 40" fill="none">
   <g transform="translate(2 4)">
-    <circle cx="16" cy="16" r="15" fill="#8B86F5" opacity="0.18"/>
-    <circle cx="16" cy="8" r="4" fill="#A5A1FA"/>
-    <circle cx="8" cy="21" r="4" fill="#8B86F5"/>
-    <circle cx="24" cy="21" r="4" fill="#C3C0FF"/>
-    <path d="M16 8 L8 21 L24 21 Z" stroke="#A5A1FA" stroke-width="1.6" stroke-linejoin="round" fill="none"/>
+    <circle cx="16" cy="8" r="4" fill="#ECECEC"/>
+    <circle cx="8" cy="21" r="4" fill="#B4B4B4"/>
+    <circle cx="24" cy="21" r="4" fill="#B4B4B4"/>
+    <path d="M16 8 L8 21 L24 21 Z" stroke="#ECECEC" stroke-width="1.6" stroke-linejoin="round" fill="none"/>
   </g>
-  <text x="44" y="26" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="600" fill="#E6E8F2">Research Assistant</text>
+  <text x="44" y="26" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="600" fill="#ECECEC">Research Assistant</text>
 </svg>

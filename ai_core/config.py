@@ -39,18 +39,28 @@ class Settings(BaseSettings):
     chainlit_auth_secret: str = ""
     database_url: str = "sqlite+aiosqlite:///chainlit.db"
     allow_signup: bool = True
+    auth_users: str = ""
+    api_key: str = ""
     max_revisions: int = 1
 
-    def api_key(self, provider: str) -> str:
+    def provider_key(self, provider: str) -> str:
         return getattr(self, f"{provider}_api_key", "")
 
     def models(self, provider: str, tier: str) -> list[str]:
         raw = getattr(self, f"{provider}_{tier}_models", "")
         return [m.strip() for m in raw.split(",") if m.strip()]
 
+    def owner_accounts(self) -> dict[str, str]:
+        out = {}
+        for entry in self.auth_users.split(","):
+            name, _, hashed = entry.strip().partition(":")
+            if name and hashed:
+                out[name.strip()] = hashed.strip()
+        return out
+
     def configured_providers(self) -> list[str]:
         order = [p.strip() for p in self.provider_order.split(",") if p.strip() in PROVIDERS]
-        return [p for p in order if self.api_key(p)]
+        return [p for p in order if self.provider_key(p)]
 
 
 @lru_cache

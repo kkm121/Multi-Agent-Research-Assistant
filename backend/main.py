@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+import hmac
+
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -44,7 +46,15 @@ def health():
     return {"status": "ok", "version": app.version}
 
 
-@app.get("/api/providers")
+def require_api_key(x_api_key: str = Header(default="")):
+    expected = get_settings().api_key
+    if not expected:
+        raise HTTPException(status_code=403, detail="API access is disabled. Set API_KEY on the server to enable it.")
+    if not hmac.compare_digest(x_api_key.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header.")
+
+
+@app.get("/api/providers", dependencies=[Depends(require_api_key)])
 def providers():
     s = get_settings()
     r = get_router()
@@ -64,7 +74,7 @@ def providers():
     }
 
 
-@app.post("/api/research")
+@app.post("/api/research", dependencies=[Depends(require_api_key)])
 async def research_sync(req: ResearchRequest):
     report = None
     async for kind, payload in run_research(req.topic, req.depth, req.document_text, req.document_name):
@@ -73,13 +83,13 @@ async def research_sync(req: ResearchRequest):
     return report.model_dump()
 
 
-@app.post("/api/research/stream")
+@app.post("/api/research/stream", dependencies=[Depends(require_api_key)])
 async def research_stream(req: ResearchRequest):
     async def events():
         async for kind, payload in run_research(req.topic, req.depth, req.document_text, req.document_name):
             if kind == "progress":
                 yield {"event": "progress", "data": json.dumps(payload)}
-            else:
+            elif kind == "report":
                 yield {"event": "report", "data": payload.model_dump_json()}
         yield {"event": "done", "data": "{}"}
 

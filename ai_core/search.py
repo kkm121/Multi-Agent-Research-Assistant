@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import date
 import xml.etree.ElementTree as ET
 from typing import Literal
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -40,13 +41,14 @@ def _client() -> httpx.AsyncClient:
     )
 
 
-async def tavily(client: httpx.AsyncClient, query: str, n: int = 5) -> list[Source]:
+async def tavily(client: httpx.AsyncClient, query: str, n: int = 6, recent: bool = False) -> list[Source]:
     key = get_settings().tavily_api_key
     if not key:
         return []
     r = await client.post(
         "https://api.tavily.com/search",
-        json={"query": query, "max_results": n, "search_depth": "basic", "include_raw_content": "text"},
+        json={"query": query, "max_results": n, "search_depth": "basic", "include_raw_content": "text"}
+        | ({"time_range": "year"} if recent else {}),
         headers={"Authorization": f"Bearer {key}"},
     )
     r.raise_for_status()
@@ -108,12 +110,14 @@ def _openalex_abstract(inv: dict | None) -> str:
     return " ".join(w for _, w in sorted(positions))
 
 
-async def openalex(client: httpx.AsyncClient, query: str, n: int = 4) -> list[Source]:
+async def openalex(client: httpx.AsyncClient, query: str, n: int = 8, recent: bool = False) -> list[Source]:
     params = {
         "search": query,
         "per-page": n,
         "select": "id,doi,title,publication_year,abstract_inverted_index,authorships,cited_by_count",
     }
+    if recent:
+        params["filter"] = f"from_publication_date:{date.today().year - 2}-01-01"
     email = get_settings().contact_email
     if email:
         params["mailto"] = email
@@ -140,10 +144,10 @@ async def openalex(client: httpx.AsyncClient, query: str, n: int = 4) -> list[So
     return out
 
 
-async def arxiv(client: httpx.AsyncClient, query: str, n: int = 3) -> list[Source]:
+async def arxiv(client: httpx.AsyncClient, query: str, n: int = 5, recent: bool = False) -> list[Source]:
     r = await client.get(
         "https://export.arxiv.org/api/query",
-        params={"search_query": f"all:{query}", "max_results": n, "sortBy": "relevance"},
+        params={"search_query": f"all:{query}", "max_results": n, "sortBy": "submittedDate" if recent else "relevance"},
     )
     r.raise_for_status()
     ns = {"a": "http://www.w3.org/2005/Atom"}
@@ -168,7 +172,7 @@ async def arxiv(client: httpx.AsyncClient, query: str, n: int = 3) -> list[Sourc
     return out
 
 
-async def semantic_scholar(client: httpx.AsyncClient, query: str, n: int = 3) -> list[Source]:
+async def semantic_scholar(client: httpx.AsyncClient, query: str, n: int = 5, recent: bool = False) -> list[Source]:
     global _s2_last
     headers = {}
     key = get_settings().semantic_scholar_api_key
@@ -181,7 +185,8 @@ async def semantic_scholar(client: httpx.AsyncClient, query: str, n: int = 3) ->
         _s2_last = time.monotonic()
         r = await client.get(
             "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={"query": query, "limit": n, "fields": "title,url,abstract,year,authors,citationCount"},
+            params={"query": query, "limit": n, "fields": "title,url,abstract,year,authors,citationCount"}
+            | ({"year": f"{date.today().year - 2}-"} if recent else {}),
             headers=headers,
         )
     r.raise_for_status()
@@ -240,20 +245,22 @@ async def _safe(name: str, coro) -> list[Source]:
         return []
 
 
-async def search(query: str, mode: Literal["web", "academic", "both"] = "both", read_pages: int = 2) -> list[Source]:
-    cache_key = (query.lower().strip(), mode)
+async def search(
+    query: str, mode: Literal["web", "academic", "both"] = "both", read_pages: int = 2, recent: bool = False
+) -> list[Source]:
+    cache_key = (query.lower().strip(), mode, recent)
     if cache_key in _cache:
         return _cache[cache_key]
 
     async with _client() as client:
         tasks = []
         if mode in ("web", "both"):
-            tasks.append(_safe("tavily", tavily(client, query)))
+            tasks.append(_safe("tavily", tavily(client, query, recent=recent)))
             tasks.append(_safe("wikipedia", wikipedia(client, query)))
         if mode in ("academic", "both"):
-            tasks.append(_safe("openalex", openalex(client, query)))
-            tasks.append(_safe("arxiv", arxiv(client, query)))
-            tasks.append(_safe("semantic_scholar", semantic_scholar(client, query)))
+            tasks.append(_safe("openalex", openalex(client, query, recent=recent)))
+            tasks.append(_safe("arxiv", arxiv(client, query, recent=recent)))
+            tasks.append(_safe("semantic_scholar", semantic_scholar(client, query, recent=recent)))
         groups = await asyncio.gather(*tasks)
 
         results: list[Source] = [s for g in groups for s in g]

@@ -40,14 +40,16 @@ before you see it. It runs entirely on **free, no-credit-card APIs** and fits in
 | Citations | `[1]` numbers invented by the LLM, so references could be hallucinated | Facts are tied to real retrieved sources; citations to non-existent sources are **removed in code**; the reference list is built from the source registry, not by the LLM |
 | Reflexion | Critic never saw the evidence | Fact-checker compares the draft to the evidence list; unsupported claims trigger a rewrite |
 | Research depth | 1 query, 1 fact per persona | Quick (3 agents) or Deep (4 agents × 2 gap-filling rounds) |
+| Conversation | Every message started a new, unrelated report ("repeat that" produced a random report) | **Chat memory**: an intent router sends each message to new research, a follow-up answered from earlier evidence, a repeat, or small talk; comparisons reuse earlier findings; memory is stored with the thread and survives reloads |
+| Retrieval | First results from each search engine, as returned | **Hybrid ranking**: BM25 + Gemini embeddings fused with Reciprocal Rank Fusion picks the most relevant sources before extraction and the most relevant remembered facts for follow-ups; "recent/latest" questions filter academic search to the last 2 years |
 | PDF RAG | `bge-m3` + torch + FAISS (~2.5 GB RAM, OOMs on free hosts) | In-process **BM25**: zero model downloads, milliseconds |
 | Orchestration | LangGraph 0.0.x, personas in threads | LangGraph 1.2 with **`Send` fan-out** per persona and custom stream events |
 | UI ↔ backend | Chainlit called its own server over HTTP | Chainlit runs the graph in-process; REST/SSE API kept for external clients |
-| Auth | Plaintext passwords sent to the browser; users with no password could log in with **any** password | Salted **scrypt** hashes in a separate table, automatic migration of v1 accounts |
+| Auth | Plaintext passwords sent to the browser; users with no password could log in with **any** password; REST API open to anyone | Salted **scrypt** hashes; optional **private mode** (`AUTH_USERS`) where only your accounts exist and nobody can sign up; REST API requires an `X-API-Key`; other users can never open your chats |
 | Thread history | Silently broken on SQLite (list binding error) | Fixed via a small data-layer adapter |
-| UI | Default Chainlit | Custom theme and logo, research profiles, starters, live task list, citation chips, downloadable Markdown report, "Go deeper" action |
+| UI | Default Chainlit | ChatGPT-style dark theme plus a light theme, research profiles, starters, live task list, citation chips, downloadable Markdown report, "Go deeper" action |
 | Image | torch, sentence-transformers, FAISS, ragas, langchain-* | No ML frameworks; all deps pinned; non-root; health check |
-| Tests | None | 20 offline tests (router, citations, BM25, auth flow, full graph with a fake LLM) + live provider check + grounding eval |
+| Tests | None | 30 offline tests (router, citations, retrieval, memory, auth and API access, full graph with a fake LLM) + live provider check + grounding eval + v1/v2 benchmark |
 
 ## How it works
 
@@ -78,6 +80,19 @@ graph LR
 
 Progress from every agent streams live into the UI.
 
+### Conversation memory
+
+Each chat keeps a memory of its turns, reports, extracted facts and source excerpts, stored with the
+thread so it survives reloads and resumed chats. Every new message is classified first:
+
+| Message | What happens |
+|---|---|
+| A new topic | Full research run |
+| A question about earlier results ("what did you find about X?", "which source said that?") | Answered from the stored evidence with hybrid retrieval and citations, no new search |
+| A comparison with something new ("compare that with bio-science") | New research, seeded with the earlier facts so the report covers both |
+| "Repeat that" / "show it again" | The previous answer, unchanged |
+| Greetings, thanks, questions about the assistant | Short reply |
+
 ## Free APIs used
 
 All of these work **without a credit card**. You need **at least one LLM key**. More keys give more headroom, since the router fails over automatically.
@@ -85,15 +100,15 @@ Status was verified live on 2026-11-07 with `scripts/check_providers.py`.
 
 | Purpose | Provider | Get a key | Default models (fallback order) | Status 2026-11-07 |
 |---|---|---|---|---|
-| LLM | Google Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | 3.5-flash-lite, flash-lite-latest, 2.5-flash / 2.5-flash, 3.5-flash | ✅ primary (≈15 RPM per model) |
-| LLM | Groq | [console.groq.com/keys](https://console.groq.com/keys) | gpt-oss-20b, qwen3.8-27b / gpt-oss-120b | ✅ fastest (<1 s) |
-| LLM | OpenRouter | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | `openrouter/free`, nemotron-3-ultra `:free` | ✅ |
-| LLM | NVIDIA NIM | [build.nvidia.com](https://build.nvidia.com/settings/api-keys) | mistral-large-4 | ✅ slower (~8 s) |
-| LLM | Mistral | [console.mistral.ai](https://console.mistral.ai/api-keys) | mistral-small / medium | ⚠️ was rate-limited when tested |
-| Search | Tavily *(optional)* | [app.tavily.com](https://app.tavily.com) | | ✅ 1,000 searches/month |
-| Search | OpenAlex, arXiv, Wikipedia, DuckDuckGo | none | | ✅ keyless |
-| Search | Semantic Scholar *(key recommended)* | [request a key](https://www.semanticscholar.org/product/api#api-key-form) | | ✅ with key; keyless pool often 429s |
-| Reader | Jina Reader *(key optional)* | [jina.ai](https://jina.ai/api-dashboard) | | ✅ |
+| LLM | Google Gemini | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | 3.5-flash-lite, flash-lite-latest, 2.5-flash / 2.5-flash, 3.5-flash | Working, primary (≈15 RPM per model) |
+| LLM | Groq | [console.groq.com/keys](https://console.groq.com/keys) | gpt-oss-20b, qwen3.8-27b / gpt-oss-120b | Working, fastest (<1 s) |
+| LLM | OpenRouter | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | `openrouter/free`, nemotron-3-ultra `:free` | Working |
+| LLM | NVIDIA NIM | [build.nvidia.com](https://build.nvidia.com/settings/api-keys) | mistral-large-4 | Working, slower (~8 s) |
+| LLM | Mistral | [console.mistral.ai](https://console.mistral.ai/api-keys) | mistral-small / medium | Was rate-limited when tested |
+| Search | Tavily *(optional)* | [app.tavily.com](https://app.tavily.com) | | Working, 1,000 searches/month |
+| Search | OpenAlex, arXiv, Wikipedia, DuckDuckGo | none | | Working, keyless |
+| Search | Semantic Scholar *(key recommended)* | [request a key](https://www.semanticscholar.org/product/api#api-key-form) | | Working with key; keyless pool often 429s |
+| Reader | Jina Reader *(key optional)* | [jina.ai](https://jina.ai/api-dashboard) | | Working |
 
 **Not used, and why:** Cerebras ended its no-card free tier in July 2026 (API now returns 402), GitHub Models was retired on 30 July 2026, and SambaNova rejected every tested key.
 
@@ -137,10 +152,21 @@ Pushing to the branch Render watches (`main`) triggers an automatic redeploy whe
 
 **Hugging Face Spaces**: Docker Space, add the keys as *Secrets*.
 
-> On free hosts with an ephemeral disk, the SQLite file (accounts and chat history) is reset on every
-> redeploy. Users can log in again with any password to reclaim their username.
+**Private mode (recommended for a personal deployment).** Create your account entry and set it as
+`AUTH_USERS` on the host. Only those accounts can log in, nobody can sign up, and because the
+credentials live in the environment they survive redeploys:
+
+```bash
+python scripts/create_account.py
+```
+
+> On free hosts with an ephemeral disk, the SQLite file (chat history) is reset on every redeploy.
+> With `AUTH_USERS` set, your login keeps working; only old chats are lost.
 
 ## API
+
+All endpoints except `/api/health` require the `X-API-Key` header to match the server's `API_KEY`.
+If `API_KEY` is not set, the REST API is disabled (the web UI does not use it).
 
 | Method | Path | Description |
 |---|---|---|
@@ -150,31 +176,52 @@ Pushing to the branch Render watches (`main`) triggers an automatic redeploy whe
 | `POST` | `/api/research/stream` | Same body; SSE events `progress` → `report` → `done` |
 
 ```bash
-curl -N -X POST localhost:8000/api/research/stream \
+curl -N -X POST localhost:8000/api/research/stream -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" -d '{"topic": "perovskite solar cell stability"}'
 ```
 
 ## Evaluation
 
-`scripts/eval_grounding.py` runs the pipeline and uses an LLM judge to check every cited sentence
-against the text of the source it cites:
+### v1 vs v2 benchmark (2026-11-07)
+
+Same 4 questions, same API keys, one judge for both (see [`benchmarks/`](benchmarks/)). The judge
+re-fetches every cited source independently (paper abstracts through the OpenAlex, Semantic Scholar
+and arXiv APIs; web pages through Jina Reader) and checks a sample of up to 12 cited sentences per
+report against that text. It is deliberately strict: a sentence fails if it adds any detail the
+source does not state.
+
+| | v1 as deployed | v1, patched to run* | v2 (two runs, 8 reports) |
+|---|---|---|---|
+| Reports produced | **0 / 4** (every provider failed) | 3 / 4 | **8 / 8** |
+| References that point to a source actually retrieved | n/a | 22% (fake links such as `system.alert/ratelimit`, `example.com`) | **100%** (0 invented) |
+| Cited sentences supported by the cited source | n/a | 0% (writer worked from model memory) | **73% average** (range 42–100%) |
+| Relevance to the question (1–5) | n/a | 2.3 | **4.9** |
+| Typical time, Quick mode | n/a | 1–2.5 min | 1–3.5 min |
+
+<sub>*v1 code with only two changes so it could run at all: Groq's retired `llama-3.3-70b-versatile`
+replaced by `gpt-oss-120b`, and Groq structured output switched from tool mode (which crashed on
+the first schema mismatch) to JSON mode. Cerebras (402) and SambaNova (401) still failed, so v1 fell
+back to its placeholder fact "System Alert: Rate Limit Exceeded" and wrote the reports from the
+model's own memory.</sub>
+
+How to read the v2 numbers: every v2 reference is real and every claim is tied to retrieved
+evidence, but roughly 1 in 4 cited sentences adds a detail the source abstract does not state
+explicitly (or paraphrases beyond it). Part of that is the judge seeing only an abstract where the
+pipeline read more text; part is genuine embellishment, which the writer and fact-checker prompts now
+explicitly forbid. Free-tier models and single runs make these numbers indicative, not precise.
+
+### Grounding check for a single question
+
+`scripts/eval_grounding.py` runs the pipeline and checks every cited sentence against the text the
+pipeline itself retrieved (a more lenient check than the benchmark above):
 
 ```bash
 python scripts/eval_grounding.py "The discovery and impact of penicillin" quick
 ```
 
-It reports **citation faithfulness** (supported cited sentences / cited sentences) and
-**citation coverage** (cited sentences / all sentences), and saves them to `eval_results.json`.
-
-Measured on 2026-11-07 (free-tier models, single runs, so treat as indicative):
-
-| Question | Mode | Time | References | Cited sentences | Faithfulness | Coverage |
-|---|---|---|---|---|---|---|
-| Long-term effects of GLP-1 agonists (semaglutide) | Deep | 5 min 41 s* | 25 | 52 / 71 | **0.94** | 0.73 |
-| Solid-state batteries: state and blockers | Quick | 55 s | 10 | — | — | — |
-| Small vs large language models on-device | Quick (via UI) | 35 s | 13 | — | — | — |
-
-<sub>*Includes the evaluation itself (52 sequential judge calls); the research pipeline alone is shorter.</sub>
+| Question | Mode | References | Cited sentences | Faithfulness | Coverage |
+|---|---|---|---|---|---|
+| Long-term effects of GLP-1 agonists (semaglutide) | Deep | 25 | 52 / 71 | 0.94 | 0.73 |
 
 ## Project layout
 
@@ -182,6 +229,8 @@ Measured on 2026-11-07 (free-tier models, single runs, so treat as indicative):
 ai_core/
   config.py      settings from env
   llm.py         async multi-provider router (failover, rate-limit benching, structured output)
+  rank.py        hybrid retrieval: BM25 + embeddings with Reciprocal Rank Fusion
+  conversation.py chat memory, intent routing, follow-up answers
   search.py      parallel search backends + reader
   retrieval.py   BM25 over uploaded documents
   agents.py      persona / query / extraction / outline / writer / critic + citation verification
@@ -190,7 +239,7 @@ ai_core/
 backend/main.py  FastAPI (REST + SSE) with the Chainlit UI mounted at /
 frontend/        Chainlit app + password hashing
 public/          theme, CSS, logos
-scripts/         provider checker, grounding evaluation
+scripts/         provider checker, grounding evaluation, account creation
 tests/           offline test suite
 docs/UPGRADE_TRACKER.md   v2 audit and verification log
 ```

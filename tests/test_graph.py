@@ -44,7 +44,7 @@ class FakeRouter:
         return "Summary [1].\n\n## A\nClaim [1][2]. Invented [42]."
 
 
-async def fake_search(query, mode="both", read_pages=2):
+async def fake_search(query, mode="both", read_pages=2, recent=False):
     return [Source(title=f"{query}-{i}", url=f"https://ex.com/{query}/{i}", content="c" * 50, origin="Stub") for i in range(3)]
 
 

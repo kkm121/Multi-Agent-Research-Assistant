@@ -36,9 +36,10 @@ async def plan_personas(topic: str, n: int = 3) -> list[Persona]:
                 {
                     "role": "system",
                     "content": (
-                        f"You assemble a research panel. Return exactly {n} expert personas who would "
-                        "investigate the topic from clearly different angles (e.g. technical, historical, "
-                        "economic, ethical, practical). No overlap in focus."
+                        f"You assemble a research panel. First identify every part of the question (for example "
+                        "'how does X work' and 'what are its risks' are two parts). Then return exactly "
+                        f"{n} expert personas so that every part is covered, the core explanatory part first, "
+                        "with clearly different angles and no overlap in focus."
                     ),
                 },
                 {"role": "user", "content": f"Topic: {topic}"},
@@ -65,7 +66,8 @@ async def plan_queries(topic: str, persona: Persona, known: list[str], n: int = 
                 "content": (
                     f"You are {persona.name}, a {persona.role}. Your focus: {persona.focus}. "
                     f"Write {n} short search queries that would find authoritative evidence for your focus. "
-                    "Do not repeat what is already known; target gaps. Choose the search mode."
+                    "Do not repeat what is already known; target gaps. Choose the search mode, and set recent=true "
+                    "when the topic is about recent, latest or current developments."
                 ),
             },
             {"role": "user", "content": f"Topic: {topic}\n\nAlready known:\n{known_txt}"},
@@ -187,7 +189,9 @@ async def write_report(
                 "content": (
                     "You are a meticulous research writer. Write the report body in Markdown following the outline.\n"
                     "STRICT RULES:\n"
-                    "1. Use ONLY the evidence provided. Never add facts, numbers or sources from memory.\n"
+                    "1. Use ONLY the evidence provided. Never add facts, numbers or sources from memory. Do not "
+                    "add examples, materials, equipment, mechanisms, names or causes that the cited evidence does "
+                    "not state, even if they are well known; a shorter accurate sentence beats a richer one.\n"
                     "2. Every factual sentence ends with a citation like [3] or [2][5] using the evidence ids.\n"
                     "3. Use '## ' headings for sections exactly as in the outline. Do not write a title, "
                     "a references list, or a closing summary of sources.\n"
@@ -216,6 +220,11 @@ def check_draft(text: str, previous: str = "") -> None:
         raise ValueError(f"draft too short ({words} words)")
     if cites < 3:
         raise ValueError(f"draft has only {cites} citations")
+    body = re.sub(r"^#.*$", "", text, flags=re.M)
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n+", body) if len(s.split()) >= 8]
+    cited = sum(1 for s in sentences if _CITE.search(s))
+    if sentences and cited / len(sentences) < 0.5:
+        raise ValueError(f"only {cited}/{len(sentences)} sentences cite evidence")
     if previous and words < 0.6 * len(previous.split()):
         raise ValueError(f"revision shrank the draft to {words} words")
 
@@ -227,8 +236,10 @@ async def critique(draft: str, evidence: str) -> Critique:
             {
                 "role": "system",
                 "content": (
-                    "You are a strict fact-checker. Compare the draft against the evidence list. "
-                    "List any claim that is not supported by the evidence it cites (or cites nothing), and "
+                    "You are a strict fact-checker. Compare the draft against the evidence list sentence by "
+                    "sentence. List any claim that is not supported by the evidence it cites (or cites nothing), "
+                    "including specific details the evidence does not mention (added examples, materials, "
+                    "equipment, mechanisms, numbers or causes), and "
                     "up to 4 concrete improvements. Set needs_revision=true only for unsupported claims, "
                     "wrong citations, or major structural gaps — not for style nitpicks."
                 ),

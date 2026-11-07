@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import operator
+import re
 from typing import Annotated, Literal, TypedDict
 
 from langgraph.config import get_stream_writer
@@ -13,9 +14,12 @@ from . import agents
 from .config import get_settings
 from .llm import LLMNotConfigured, LLMUnavailable
 from .models import Critique, Fact, Outline, Persona, ResearchReport, Source
+from .rank import hybrid_rank
 from .search import search
 
 log = logging.getLogger(__name__)
+
+RECENT_RE = re.compile(r"\b(recent|latest|newest|current|emerging|state of the art|this year|20(2[4-9]|3\d))\b", re.I)
 
 DEPTHS = {
     "quick": {"personas": 3, "rounds": 1, "queries": 2, "facts_per_round": 6, "words": "800-1100"},
@@ -41,6 +45,8 @@ class ResearchState(TypedDict, total=False):
     revisions: int
     report: ResearchReport
     error: str
+    prior_facts: list[Fact]
+    prior_sources: dict[str, Source]
 
 
 class PersonaTask(TypedDict):
@@ -63,7 +69,12 @@ async def plan(state: ResearchState) -> dict:
     emit("Orchestrator", "Assembling an expert panel…")
     personas = await agents.plan_personas(state["topic"], cfg["personas"])
     emit("Orchestrator", "Panel: " + ", ".join(f"{p.name} ({p.role})" for p in personas), "result")
-    return {"personas": personas, "revisions": 0}
+    seeded = {}
+    prior = state.get("prior_facts") or []
+    if prior:
+        emit("Orchestrator", f"Carrying {len(prior)} facts from earlier in this chat into the comparison", "result")
+        seeded = {"facts": prior, "sources": state.get("prior_sources") or {}}
+    return {"personas": personas, "revisions": 0, **seeded}
 
 
 def fan_out(state: ResearchState) -> list[Send]:
@@ -96,14 +107,27 @@ async def research(task: PersonaTask) -> dict:
             emit(p.name, f"Query planning failed: {e}", "warn")
             break
         emit(p.name, f"Round {rnd + 1}: searching {', '.join(repr(q) for q in plan_.queries)} ({plan_.mode})")
-        groups = await asyncio.gather(*(search(q, plan_.mode) for q in plan_.queries))
-        found: list[Source] = []
+        recent = plan_.recent or bool(RECENT_RE.search(task["topic"]))
+        groups = await asyncio.gather(*(search(q, plan_.mode, recent=recent) for q in plan_.queries))
+        candidates: list[Source] = []
         seen = set(sources)
         for g in groups:
-            for s in g[:5]:
+            for s in g:
                 if s.url not in seen:
                     seen.add(s.url)
-                    found.append(s)
+                    candidates.append(s)
+        found: list[Source] = []
+        if candidates:
+            query = f"{task['topic']} {p.focus} {' '.join(plan_.queries)}"
+            order = await hybrid_rank(query, [f"{s.title}. {s.snippet or s.content[:500]}" for s in candidates])
+            per_origin: dict[str, int] = {}
+            for i in order:
+                o = candidates[i].origin
+                if per_origin.get(o, 0) < 4:
+                    per_origin[o] = per_origin.get(o, 0) + 1
+                    found.append(candidates[i])
+                if len(found) == 8:
+                    break
         if task["document_text"]:
             for q in plan_.queries:
                 for s in agents.document_sources(task["document_text"], task["document_name"], q, task["topic"]):
@@ -187,7 +211,7 @@ async def review(state: ResearchState) -> dict:
             "warn",
         )
     else:
-        emit("Fact-checker", "Draft is grounded in the evidence ✓", "result")
+        emit("Fact-checker", "Draft is grounded in the evidence", "result")
     return {"critique": crit}
 
 
@@ -234,17 +258,32 @@ def build_graph():
 research_graph = build_graph()
 
 
-async def run_research(topic: str, depth: str = "quick", document_text: str = "", document_name: str = "document"):
-    state = {"topic": topic, "depth": depth, "document_text": document_text, "document_name": document_name}
+async def run_research(
+    topic: str,
+    depth: str = "quick",
+    document_text: str = "",
+    document_name: str = "document",
+    prior_facts: list[Fact] | None = None,
+    prior_sources: dict[str, Source] | None = None,
+):
+    state = {
+        "topic": topic,
+        "depth": depth,
+        "document_text": document_text,
+        "document_name": document_name,
+        "prior_facts": prior_facts or [],
+        "prior_sources": prior_sources or {},
+    }
     report = None
+    final: dict = {}
     try:
-        async for mode, chunk in research_graph.astream(state, stream_mode=["custom", "updates"]):
+        async for mode, chunk in research_graph.astream(state, stream_mode=["custom", "values"]):
             if mode == "custom":
                 yield "progress", chunk
-            elif mode == "updates":
-                for node, update in chunk.items():
-                    if node == "finalize" and update and "report" in update:
-                        report = update["report"]
+            elif mode == "values":
+                final = chunk
+                if chunk.get("report") is not None:
+                    report = chunk["report"]
     except LLMUnavailable as e:
         log.error("research aborted: %s", e)
         yield "progress", {"agent": "System", "message": str(e), "kind": "error"}
@@ -253,7 +292,7 @@ async def run_research(topic: str, depth: str = "quick", document_text: str = ""
                 title="No AI provider configured",
                 markdown=(
                     "The server has no LLM API key set. Add at least one free key (`GEMINI_API_KEY`, "
-                    "`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `MISTRAL_API_KEY`) to the "
+                    "`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` or `MISTRAL_API_KEY`) to the "
                     "environment and restart. See the README for links."
                 ),
             )
@@ -268,4 +307,5 @@ async def run_research(topic: str, depth: str = "quick", document_text: str = ""
             )
     if report is None:
         report = ResearchReport(title="Research failed", markdown="The pipeline ended without a report.")
+    yield "evidence", {"facts": final.get("facts", []), "sources": final.get("sources", {})}
     yield "report", report
