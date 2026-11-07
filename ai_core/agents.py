@@ -1,5 +1,3 @@
-"""The agents. Each is a small async function around one LLM call with a tight prompt."""
-
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +28,6 @@ FALLBACK_PERSONAS = [
 ]
 
 
-# ------------------------------------------------------------------ planning
 async def plan_personas(topic: str, n: int = 3) -> list[Persona]:
     try:
         result = await get_router().structured(
@@ -79,10 +76,9 @@ async def plan_queries(topic: str, persona: Persona, known: list[str], n: int = 
     return plan
 
 
-# ------------------------------------------------------------------ evidence
 def document_sources(document_text: str, document_name: str, query: str, topic: str = "", k: int = 2) -> list[Source]:
     chunks = search_document(document_text, f"{query} {topic}", k=k)
-    if not chunks:  # no keyword overlap: still let the agent read the document's opening
+    if not chunks:
         chunks = chunk_text(document_text)[:k]
     return [
         Source(
@@ -98,8 +94,6 @@ def document_sources(document_text: str, document_name: str, query: str, topic: 
 
 
 async def extract_facts(topic: str, persona: Persona, sources: list[Source], max_facts: int = 6) -> list[Fact]:
-    """Pull grounded claims out of sources. The LLM only ever sees local ids; we map back to URLs,
-    so a fact can never point at a source that wasn't retrieved."""
     if not sources:
         return []
     numbered = {i + 1: s for i, s in enumerate(sources)}
@@ -131,7 +125,6 @@ async def extract_facts(topic: str, persona: Persona, sources: list[Source], max
     return facts
 
 
-# ------------------------------------------------------------------ writing
 def _evidence_block(facts: list[Fact], ids: dict[str, int], sources: dict[str, Source]) -> str:
     by_src: dict[int, list[str]] = {}
     for f in facts:
@@ -217,8 +210,6 @@ async def write_report(
 
 
 def check_draft(text: str, previous: str = "") -> None:
-    """Reject degenerate drafts so the router tries another model (some free models return a
-    one-paragraph 'summary' or drop citations)."""
     words = len(text.split())
     cites = sum(len(re.findall(r"\d+", group)) for group in _CITE.findall(text))
     if words < 250:
@@ -248,12 +239,10 @@ async def critique(draft: str, evidence: str) -> Critique:
     )
 
 
-# ------------------------------------------------------------------ citations
 _CITE = re.compile(r"\[(\d+(?:\s*(?:,|\]\s*\[)\s*\d+)*)\]")
 
 
 def assign_ids(facts: list[Fact], sources: dict[str, Source]) -> dict[str, int]:
-    """Number only sources that actually back a fact, in order of first appearance."""
     ids: dict[str, int] = {}
     for f in facts:
         if f.source_url in sources and f.source_url not in ids:
@@ -264,9 +253,6 @@ def assign_ids(facts: list[Fact], sources: dict[str, Source]) -> dict[str, int]:
 def finalize_citations(
     markdown: str, ids: dict[str, int], sources: dict[str, Source]
 ) -> tuple[str, list[Reference], int]:
-    """Renumber citations by first use, drop ids that don't exist, build the reference list.
-
-    Returns (markdown, references, n_invalid_citations_removed)."""
     by_id = {i: sources[u] for u, i in ids.items()}
     remap: dict[int, int] = {}
     invalid = 0
@@ -285,7 +271,7 @@ def finalize_citations(
         return "".join(dict.fromkeys(out))
 
     body = _CITE.sub(repl, markdown)
-    body = re.sub(r"[ \t]+([.,;:])", r"\1", body)  # tidy spaces left by removed citations
+    body = re.sub(r"[ \t]+([.,;:])", r"\1", body)
     refs = [
         Reference(id=new, title=by_id[old].title, url=by_id[old].url, origin=by_id[old].origin)
         for old, new in sorted(remap.items(), key=lambda kv: kv[1])

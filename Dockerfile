@@ -7,13 +7,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# No compilers needed any more: every dependency ships wheels (torch/faiss were removed in v2).
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
 
-# Run as non-root; the app writes only chainlit.db and Chainlit's cache in /app.
 RUN useradd --create-home --uid 1000 app && chown -R app:app /app
 USER app
 

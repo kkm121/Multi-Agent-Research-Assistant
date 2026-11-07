@@ -1,13 +1,3 @@
-"""LangGraph orchestration (STORM-style multi-perspective research + grounded reflexion).
-
-    plan ──Send()──▶ research(persona 1) ─┐
-         ├────────▶ research(persona 2) ─┼─▶ outline ─▶ write ─▶ critique ─┬─▶ finalize
-         └────────▶ research(persona N) ─┘                ▲               │
-                                                          └── revise ◀────┘
-
-Progress is streamed with `stream_mode="custom"` events: {"agent", "message", "kind"}.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -65,10 +55,9 @@ def emit(agent: str, message: str, kind: str = "info") -> None:
     try:
         get_stream_writer()({"agent": agent, "message": message, "kind": kind})
     except Exception:
-        pass  # not running under a streaming invocation
+        pass
 
 
-# ------------------------------------------------------------------ nodes
 async def plan(state: ResearchState) -> dict:
     cfg = DEPTHS[state.get("depth", "quick")]
     emit("Orchestrator", "Assembling an expert panel…")
@@ -120,7 +109,7 @@ async def research(task: PersonaTask) -> dict:
                 for s in agents.document_sources(task["document_text"], task["document_name"], q, task["topic"]):
                     if s.url not in seen:
                         seen.add(s.url)
-                        found.insert(0, s)  # uploaded doc gets priority
+                        found.insert(0, s)
         if not found:
             emit(p.name, "No sources found this round.", "warn")
             continue
@@ -175,7 +164,6 @@ async def write(state: ResearchState) -> dict:
     except LLMUnavailable:
         if not feedback:
             raise
-        # A failed revision must never lose a good first draft.
         emit("Writer", "Revision unavailable right now — keeping the fact-checked first draft", "warn")
         return {"draft": state["draft"], "revisions": state.get("revisions", 0) + 1, "critique": Critique(needs_revision=False)}
     emit("Writer", f"Draft ready ({len(draft.split())} words)", "result")
@@ -247,7 +235,6 @@ research_graph = build_graph()
 
 
 async def run_research(topic: str, depth: str = "quick", document_text: str = "", document_name: str = "document"):
-    """Async generator yielding ("progress", dict) events and finally ("report", ResearchReport)."""
     state = {"topic": topic, "depth": depth, "document_text": document_text, "document_name": document_name}
     report = None
     try:

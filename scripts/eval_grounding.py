@@ -1,13 +1,3 @@
-"""Measure how well report claims are grounded in the sources they cite.
-
-For every cited sentence in the final report, an LLM judge reads the cited source text and decides
-whether it supports the sentence. Reports:
-  * citation_faithfulness — supported cited sentences / all cited sentences
-  * citation_coverage     — sentences with a citation / all factual-looking sentences
-
-    python scripts/eval_grounding.py "The discovery of penicillin" [quick|deep]
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -43,7 +33,6 @@ async def main(topic: str, depth: str) -> None:
     state = await research_graph.ainvoke({"topic": topic, "depth": depth})
     report = state["report"]
     ids = agents.assign_ids(state["facts"], state["sources"])
-    # finalize renumbered citations; rebuild a map from final ref id -> source
     by_url = state["sources"]
     ref_src = {r.id: by_url[r.url] for r in report.references if r.url in by_url}
 
@@ -69,7 +58,7 @@ async def main(topic: str, depth: str) -> None:
         return v.supported
 
     verdicts = []
-    for s, ns in cited:  # sequential: stays within free-tier rate limits
+    for s, ns in cited:
         try:
             verdicts.append(await judge(s, ns))
         except Exception as e:

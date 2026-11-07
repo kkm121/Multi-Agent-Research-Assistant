@@ -1,5 +1,3 @@
-"""FastAPI app: public REST/SSE API + the Chainlit UI mounted at `/`."""
-
 from __future__ import annotations
 
 import json
@@ -23,7 +21,7 @@ from ai_core.llm import get_router
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s: %(message)s")
 for noisy in ("httpx", "httpcore", "openai", "primp", "ddgs"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
-logging.getLogger("instructor").setLevel(logging.CRITICAL)  # router logs failures itself
+logging.getLogger("instructor").setLevel(logging.CRITICAL)
 
 app = FastAPI(title="Multi-Agent Research API", version="2.0.0")
 app.add_middleware(

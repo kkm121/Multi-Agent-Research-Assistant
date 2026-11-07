@@ -1,5 +1,3 @@
-"""Graph integration test with a scripted fake LLM (no keys) and stubbed search (no network)."""
-
 import asyncio
 import re
 
@@ -32,7 +30,6 @@ class FakeRouter:
             return QueryPlan(queries=["q1", "q2"], mode="both")
         if model is ExtractedFacts:
             ids = [int(x) for x in re.findall(r"^\[(\d+)\]", messages[1]["content"], re.M)]
-            # one real id and one invented id (99) which must be dropped
             return ExtractedFacts(facts=[ExtractedFact(statement=f"fact from {i}", source_id=i) for i in ids[:2]]
                                   + [ExtractedFact(statement="ghost", source_id=99)])
         if model is Outline:
@@ -73,19 +70,19 @@ def _run(depth, **kw):
 def test_quick_pipeline_end_to_end(patched):
     events, report = _run("quick")
     assert report.title == "Test Report"
-    assert "[42]" not in report.markdown  # invented citation stripped
+    assert "[42]" not in report.markdown
     assert len(report.references) == 2
     assert all(r.url.startswith("https://ex.com/") for r in report.references)
     assert patched.calls.count("PersonaList") == 1
-    assert patched.calls.count("QueryPlan") == 3  # 3 personas x 1 round
-    assert patched.calls.count("text") == 2  # draft + 1 revision (critic flagged once)
+    assert patched.calls.count("QueryPlan") == 3
+    assert patched.calls.count("text") == 2
     agents_seen = {e["agent"] for e in events}
     assert {"Orchestrator", "Planner", "Writer", "Fact-checker", "Editor"} <= agents_seen
 
 
 def test_deep_uses_more_personas_and_rounds(patched):
     _, report = _run("deep")
-    assert patched.calls.count("QueryPlan") == 8  # 4 personas x 2 rounds
+    assert patched.calls.count("QueryPlan") == 8
     assert report.references
 
 

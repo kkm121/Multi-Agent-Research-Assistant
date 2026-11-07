@@ -1,9 +1,3 @@
-"""Live check of every configured provider and search backend.
-
-    python scripts/check_providers.py            # ping configured models + search backends
-    python scripts/check_providers.py --models   # also list model IDs each LLM provider offers
-"""
-
 from __future__ import annotations
 
 import asyncio

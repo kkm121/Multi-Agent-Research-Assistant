@@ -1,10 +1,3 @@
-"""Lightweight retrieval over an uploaded document.
-
-Replaces the v1 `BAAI/bge-m3` + FAISS stack (~2.5 GB RAM, would not fit on a free host) with
-Okapi BM25 — pure Python, no model download, millisecond latency, and strong on keyword-heavy
-research queries.
-"""
-
 from __future__ import annotations
 
 import hashlib

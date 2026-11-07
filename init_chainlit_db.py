@@ -1,5 +1,3 @@
-"""Create the SQLite schema used by Chainlit's SQLAlchemyDataLayer (+ the auth table). Idempotent."""
-
 import os
 import sqlite3
 
@@ -81,7 +79,6 @@ CREATE TABLE IF NOT EXISTS auth_credentials (
 );
 """
 
-# Columns added in newer Chainlit versions — add them to databases created by v1.
 MIGRATIONS = [
     ("steps", "autoCollapse", "INTEGER"),
     ("steps", "modes", "TEXT"),

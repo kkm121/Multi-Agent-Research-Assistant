@@ -1,5 +1,3 @@
-"""Data models. LLM-facing models are kept small so free-tier models fill them reliably."""
-
 from __future__ import annotations
 
 from typing import Literal
@@ -7,10 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-# ----------------------------------------------------------------- evidence
 class Source(BaseModel):
-    """A retrieved document. `id` is assigned by the graph's source registry."""
-
     id: int = 0
     title: str
 
@@ -27,11 +22,10 @@ class Source(BaseModel):
 
 class Fact(BaseModel):
     statement: str
-    source_url: str  # key into the source registry (ids are assigned at the end)
+    source_url: str
     persona: str = ""
 
 
-# ----------------------------------------------------------------- LLM outputs
 class Persona(BaseModel):
     name: str = Field(description="Short name for the expert, e.g. 'Dr. Lee'.")
     role: str = Field(description="Expertise, e.g. 'Battery chemist'.")
@@ -80,7 +74,6 @@ class Critique(BaseModel):
     needs_revision: bool = Field(description="True only if there are unsupported claims or serious gaps.")
 
 
-# ----------------------------------------------------------------- final output
 class Reference(BaseModel):
     id: int
     title: str
@@ -90,5 +83,5 @@ class Reference(BaseModel):
 
 class ResearchReport(BaseModel):
     title: str
-    markdown: str  # body with [n] citations
+    markdown: str
     references: list[Reference] = Field(default_factory=list)

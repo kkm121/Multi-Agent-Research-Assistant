@@ -1,5 +1,3 @@
-"""Login flow against a throwaway SQLite database."""
-
 import asyncio
 import importlib
 import json
@@ -21,7 +19,6 @@ def test_login_flow(tmp_path, monkeypatch):
     config.get_settings.cache_clear()
     app = importlib.import_module("frontend.app")
     app._data_layer = None
-    # Seed a v1 user (plaintext password in metadata) and an orphan row with no credentials.
     con = sqlite3.connect(db)
     for ident, meta in (("legacy", {"role": "user", "password": "oldpass1"}), ("orphan", {"role": "user"})):
         con.execute("INSERT INTO users VALUES (?,?,?,?)", (str(uuid.uuid4()), ident, json.dumps(meta), "2026-01-01"))
@@ -31,15 +28,15 @@ def test_login_flow(tmp_path, monkeypatch):
     login = app.auth_callback
 
     async def go():
-        assert await login("ab", "longenough") is None  # bad username
-        assert await login("alice", "short") is None  # short password
-        assert (await login("alice", "secret123")).identifier == "alice"  # signup
-        assert (await login("alice", "secret123")).identifier == "alice"  # login
+        assert await login("ab", "longenough") is None
+        assert await login("alice", "short") is None
+        assert (await login("alice", "secret123")).identifier == "alice"
+        assert (await login("alice", "secret123")).identifier == "alice"
         assert await login("alice", "wrong-pass") is None
         assert await login("legacy", "wrongpass") is None
-        assert (await login("legacy", "oldpass1")).identifier == "legacy"  # migrated
-        assert (await login("legacy", "oldpass1")) is not None  # now via hash
-        assert (await login("orphan", "newpass99")).identifier == "orphan"  # reclaimed
+        assert (await login("legacy", "oldpass1")).identifier == "legacy"
+        assert (await login("legacy", "oldpass1")) is not None
+        assert (await login("orphan", "newpass99")).identifier == "orphan"
         assert await login("orphan", "other-pass") is None
 
     asyncio.run(go())

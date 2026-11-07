@@ -1,5 +1,3 @@
-"""Chainlit UI. Runs the LangGraph pipeline in-process and streams agent activity live."""
-
 from __future__ import annotations
 
 import logging
@@ -27,7 +25,6 @@ AGENT_ICONS = {
 KIND_MARK = {"result": "✅", "warn": "⚠️", "error": "❌", "info": "•"}
 
 
-# ------------------------------------------------------------------ persistence & auth
 @cl.data_layer
 def get_data_layer():
     global _data_layer
@@ -37,9 +34,6 @@ def get_data_layer():
         from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 
         class SQLiteDataLayer(SQLAlchemyDataLayer):
-            """Chainlit's layer targets Postgres arrays; SQLite can't bind Python lists (e.g. the
-            chat-profile tag on new threads), which silently broke thread history in v1."""
-
             async def execute_sql(self, query, parameters):
                 parameters = {
                     k: (json.dumps(v) if isinstance(v, (list, dict)) else v) for k, v in (parameters or {}).items()
@@ -75,14 +69,10 @@ async def auth_callback(username: str, password: str):
     if existing:
         legacy = (existing.metadata or {}).get("password")
         if legacy is not None:
-            # v1 account: plaintext password lived in metadata. Accept only an exact match, then migrate.
             if legacy != password:
                 return None
             await auth.set_hash(username, password)
             return existing
-        # A user row with no credentials at all: Chainlit re-creates the row from a still-valid
-        # session cookie after the database was reset (e.g. a redeploy on an ephemeral disk).
-        # Let the person claim it again instead of locking them out forever.
         if not get_settings().allow_signup:
             return None
         await auth.set_hash(username, password)
@@ -94,7 +84,6 @@ async def auth_callback(username: str, password: str):
     return await dl.create_user(cl.User(identifier=username, metadata={"role": "user"}))
 
 
-# ------------------------------------------------------------------ chat setup
 @cl.set_chat_profiles
 async def chat_profiles(current_user: cl.User | None = None, language: str | None = None):
     return [
@@ -143,7 +132,6 @@ async def on_chat_resume(thread: dict):
     pass
 
 
-# ------------------------------------------------------------------ helpers
 async def read_upload(element) -> tuple[str, str]:
     name = getattr(element, "name", "document") or "document"
     path = getattr(element, "path", None)
@@ -184,7 +172,6 @@ def plain_markdown(report: ResearchReport) -> str:
     return md
 
 
-# ------------------------------------------------------------------ main handler
 @cl.on_message
 async def on_message(message: cl.Message):
     topic = message.content.strip()

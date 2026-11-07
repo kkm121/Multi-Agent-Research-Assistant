@@ -1,15 +1,3 @@
-"""Async multi-provider LLM router.
-
-Every provider used here exposes an OpenAI-compatible endpoint, so one client type covers
-all of them. The router:
-  * tries providers in `PROVIDER_ORDER`, skipping any without an API key;
-  * per provider, tries an ordered list of models and permanently skips a model that the provider
-    reports as gone (free-tier models get retired often — e.g. gemini-2.5-flash-lite in 2026);
-  * benches a provider after a 429 (honouring `retry-after`) instead of hammering it;
-  * caps concurrent requests per provider so parallel agents don't trip rate limits;
-  * returns validated Pydantic objects (via `instructor`) or plain text.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -39,18 +27,16 @@ BASE_URLS = {
     "nvidia": "https://integrate.api.nvidia.com/v1",
     "mistral": "https://api.mistral.ai/v1",
 }
-# Free-tier friendly parallelism per provider.
 CONCURRENCY = {"gemini": 3, "groq": 3, "openrouter": 1, "nvidia": 2, "mistral": 1}
-# Markdown-JSON parsing works with any model; native JSON mode is faster where supported.
 INSTRUCTOR_MODE = {"openrouter": instructor.Mode.MD_JSON, "nvidia": instructor.Mode.MD_JSON}
 
 
 class LLMUnavailable(RuntimeError):
-    """Raised when every configured provider failed or is rate limited."""
+    pass
 
 
 class LLMNotConfigured(LLMUnavailable):
-    """Raised when no provider API key is set at all."""
+    pass
 
 
 @dataclass
@@ -60,9 +46,9 @@ class _Provider:
     structured: instructor.AsyncInstructor
     models: dict[str, list[str]]
     sem: asyncio.Semaphore
-    benched_until: float = 0.0  # whole provider (bad key, network down)
-    dead_models: set[str] = field(default_factory=set)  # retired / not available on this account
-    model_benched_until: dict[str, float] = field(default_factory=dict)  # per-model rate limits
+    benched_until: float = 0.0
+    dead_models: set[str] = field(default_factory=set)
+    model_benched_until: dict[str, float] = field(default_factory=dict)
 
     def live_models(self, tier: str) -> list[str]:
         return [m for m in self.models[tier] if m not in self.dead_models]
@@ -72,7 +58,6 @@ class _Provider:
         return [m for m in self.live_models(tier) if self.model_benched_until.get(m, 0) <= now]
 
     def next_ready_in(self, tier: str) -> float:
-        """Seconds until some model of this tier is usable again (inf if none can ever be)."""
         now = time.monotonic()
         waits = [max(self.benched_until, self.model_benched_until.get(m, 0)) - now for m in self.live_models(tier)]
         return min(waits) if waits else float("inf")
@@ -85,7 +70,6 @@ class RouterStats:
 
 
 def root_api_error(e: BaseException) -> BaseException:
-    """`instructor` wraps provider errors (InstructorRetryException); dig out the openai error."""
     seen = 0
     cur: BaseException | None = e
     while cur is not None and seen < 8:
@@ -110,7 +94,7 @@ class LLMRouter:
                 api_key=self.settings.api_key(name),
                 base_url=BASE_URLS[name],
                 timeout=self.settings.llm_timeout_s,
-                max_retries=0,  # the router does its own failover
+                max_retries=0,
             )
             self._providers.append(
                 _Provider(
@@ -126,7 +110,6 @@ class LLMRouter:
     def provider_names(self) -> list[str]:
         return [p.name for p in self._providers]
 
-    # ------------------------------------------------------------------ public API
     async def structured(
         self,
         response_model: type[T],
@@ -152,7 +135,6 @@ class LLMRouter:
         max_tokens: int | None = None,
         validate=None,
     ) -> str:
-        """`validate(content)` may raise ValueError to reject an answer and try the next model."""
 
         async def call(p: _Provider, model: str) -> str:
             resp = await p.client.chat.completions.create(
@@ -169,7 +151,6 @@ class LLMRouter:
 
         return await self._run(call, tier, "text")
 
-    # ------------------------------------------------------------------ internals
     async def _run(self, call, tier: str, label: str):
         if not self._providers:
             raise LLMNotConfigured(
@@ -177,7 +158,7 @@ class LLMRouter:
                 "GROQ_API_KEY, OPENROUTER_API_KEY, NVIDIA_API_KEY or MISTRAL_API_KEY."
             )
         errors: list[str] = []
-        for attempt in range(2):  # second pass waits out the shortest cooldown
+        for attempt in range(2):
             for p in self._providers:
                 if p.benched_until > time.monotonic():
                     continue
@@ -196,7 +177,7 @@ class LLMRouter:
                     await asyncio.sleep(soonest)
                     continue
                 if soonest <= 0:
-                    continue  # failures were not rate limits; one more pass
+                    continue
             break
         raise LLMUnavailable(f"All LLM providers failed for {label}: " + "; ".join(errors[-6:]))
 
@@ -208,26 +189,25 @@ class LLMRouter:
             e = root_api_error(raw)
             self.stats.failures[p.name] += 1
             if isinstance(e, openai.RateLimitError):
-                # Free-tier quotas (Gemini RPM, Groq TPM, ...) are per model: bench just this model.
                 p.model_benched_until[model] = time.monotonic() + self._retry_after(e)
                 errors.append(f"{p.name}/{model}: rate limited")
                 result = _NEXT_MODEL
             elif isinstance(e, (openai.AuthenticationError, openai.PermissionDeniedError)) or getattr(e, "status_code", 0) == 402:
-                self._bench(p, 3600)  # bad key / payment required — stop trying this provider
+                self._bench(p, 3600)
                 errors.append(f"{p.name}: access denied ({getattr(e, 'status_code', '?')})")
                 result = _NEXT_PROVIDER
             elif isinstance(e, openai.NotFoundError):
-                p.dead_models.add(model)  # retired or not on this account — try the next model
+                p.dead_models.add(model)
                 errors.append(f"{p.name}/{model}: model not found")
                 result = _NEXT_MODEL
             elif isinstance(e, openai.InternalServerError):
-                errors.append(f"{p.name}/{model}: server error {e.status_code}")  # often model-specific
+                errors.append(f"{p.name}/{model}: server error {e.status_code}")
                 result = _NEXT_MODEL
             elif isinstance(e, (openai.APIConnectionError, openai.APITimeoutError)):
                 self._bench(p, 15)
                 errors.append(f"{p.name}: {type(e).__name__}")
                 result = _NEXT_PROVIDER
-            else:  # schema validation failure, bad JSON, 400 … — another model may manage
+            else:
                 errors.append(f"{p.name}/{model}: {type(raw).__name__}: {str(raw)[:120]}")
                 result = _NEXT_MODEL
             log.warning("LLM %s failed on %s/%s: %s", label, p.name, model, errors[-1])
@@ -243,7 +223,6 @@ class LLMRouter:
                 return min(float(value), 300.0)
         except Exception:
             pass
-        # Gemini and Groq put the wait in the message body ("retry in 51.1s", "try again in 16.6s").
         m = re.search(r"(?:retry in|try again in|retryDelay['\"]?:\s*['\"]?)\s*([\d.]+)\s*s", str(err), re.I)
         if m:
             return min(float(m.group(1)) + 1, 300.0)

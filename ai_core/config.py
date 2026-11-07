@@ -1,5 +1,3 @@
-"""Central settings, read once from environment / .env."""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -12,16 +10,12 @@ PROVIDERS = ("gemini", "groq", "openrouter", "nvidia", "mistral")
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # ---- LLM providers (all have free, no-credit-card tiers) ----
     gemini_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
     nvidia_api_key: str = ""
     mistral_api_key: str = ""
 
-    # Comma-separated model IDs per provider and tier, tried in order. A model the provider reports
-    # as not found is skipped for the rest of the process. "strong" = report writing, "fast" =
-    # small structured tasks. Defaults verified live on 2026-11-07 (scripts/check_providers.py).
     gemini_strong_models: str = "gemini-2.5-flash,gemini-3.5-flash"
     gemini_fast_models: str = "gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-2.5-flash"
     groq_strong_models: str = "openai/gpt-oss-120b,qwen/qwen3.8-27b"
@@ -33,19 +27,15 @@ class Settings(BaseSettings):
     mistral_strong_models: str = "mistral-medium-latest"
     mistral_fast_models: str = "mistral-small-latest"
 
-    # Order in which providers are tried (unconfigured ones are skipped).
     provider_order: str = "gemini,groq,openrouter,nvidia,mistral"
     llm_timeout_s: float = 60.0
-    # Seconds a provider is benched after a 429 (unless the response says otherwise).
     rate_limit_cooldown_s: float = 30.0
 
-    # ---- Search ----
     tavily_api_key: str = ""
     jina_api_key: str = ""
     semantic_scholar_api_key: str = ""
-    contact_email: str = ""  # optional, sent to OpenAlex "polite pool"
+    contact_email: str = ""
 
-    # ---- App ----
     chainlit_auth_secret: str = ""
     database_url: str = "sqlite+aiosqlite:///chainlit.db"
     allow_signup: bool = True

@@ -1,10 +1,3 @@
-"""Password storage for the Chainlit login.
-
-v1 kept plaintext passwords in the user's metadata (which Chainlit sends to the browser) and let
-users without a stored password log in with anything. v2 stores salted scrypt hashes in a separate
-table that is never exposed to the client.
-"""
-
 from __future__ import annotations
 
 import base64

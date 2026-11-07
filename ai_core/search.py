@@ -1,17 +1,3 @@
-"""Async multi-source search.
-
-Sources (all free):
-  * Tavily            — web search built for agents (optional key, 1k credits/month free)
-  * DuckDuckGo (ddgs) — keyless web fallback
-  * OpenAlex          — 250M+ scholarly works, keyless
-  * arXiv             — preprints, keyless
-  * Semantic Scholar  — keyless (key optional for higher limits)
-  * Wikipedia         — keyless background knowledge
-  * Jina Reader       — turns a web page into clean text (keyless, key optional)
-
-Every backend is isolated: one failing never breaks a search.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +40,6 @@ def _client() -> httpx.AsyncClient:
     )
 
 
-# --------------------------------------------------------------------------- web
 async def tavily(client: httpx.AsyncClient, query: str, n: int = 5) -> list[Source]:
     key = get_settings().tavily_api_key
     if not key:
@@ -116,7 +101,6 @@ async def jina_read(client: httpx.AsyncClient, url: str, max_chars: int = 6000) 
         return ""
 
 
-# --------------------------------------------------------------------------- academic
 def _openalex_abstract(inv: dict | None) -> str:
     if not inv:
         return ""
@@ -190,7 +174,7 @@ async def semantic_scholar(client: httpx.AsyncClient, query: str, n: int = 3) ->
     key = get_settings().semantic_scholar_api_key
     if key:
         headers["x-api-key"] = key
-    async with _s2_lock:  # keyless pool allows ~1 req/s
+    async with _s2_lock:
         wait = 1.1 - (time.monotonic() - _s2_last)
         if wait > 0:
             await asyncio.sleep(wait)
@@ -248,7 +232,6 @@ async def wikipedia(client: httpx.AsyncClient, query: str, n: int = 2) -> list[S
     return out
 
 
-# --------------------------------------------------------------------------- orchestration
 async def _safe(name: str, coro) -> list[Source]:
     try:
         return await coro
@@ -258,7 +241,6 @@ async def _safe(name: str, coro) -> list[Source]:
 
 
 async def search(query: str, mode: Literal["web", "academic", "both"] = "both", read_pages: int = 2) -> list[Source]:
-    """Run all relevant backends in parallel, dedupe by URL, and enrich top web hits with full text."""
     cache_key = (query.lower().strip(), mode)
     if cache_key in _cache:
         return _cache[cache_key]
@@ -279,7 +261,6 @@ async def search(query: str, mode: Literal["web", "academic", "both"] = "both", 
         if mode in ("web", "both") and not has_web:
             results.extend(await _safe("duckduckgo", duckduckgo(query)))
 
-        # Dedupe
         seen: set[str] = set()
         unique: list[Source] = []
         for s in results:
@@ -291,7 +272,6 @@ async def search(query: str, mode: Literal["web", "academic", "both"] = "both", 
             seen.add(key)
             unique.append(s)
 
-        # Enrich thin web results with full page text (Tavily already returns raw content).
         thin = [s for s in unique if s.kind == "web" and len(s.content) < 800][:read_pages]
         texts = await asyncio.gather(*(jina_read(client, s.url) for s in thin))
         for s, text in zip(thin, texts):

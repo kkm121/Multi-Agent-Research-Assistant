@@ -1,5 +1,3 @@
-"""Offline unit tests (no API keys, no network)."""
-
 import asyncio
 
 import httpx
@@ -15,7 +13,6 @@ from ai_core.search import _openalex_abstract, normalize_url
 from frontend.auth import hash_password, verify_password
 
 
-# ------------------------------------------------------------------ citations
 def _sources():
     return {
         "https://a.com": Source(title="A", url="https://a.com", origin="Tavily"),
@@ -46,7 +43,6 @@ def test_evidence_block_groups_by_source():
     assert block.splitlines() == ["[1] A", "    - f1", "    - f2"]
 
 
-# ------------------------------------------------------------------ retrieval
 def test_bm25_finds_relevant_chunk():
     text = ("Penicillin was discovered by Alexander Fleming in 1928. " * 5 + "filler words " * 300
             + "Photosynthesis converts light energy into chemical energy in chloroplasts. " * 5)
@@ -59,7 +55,6 @@ def test_chunking_overlaps():
     assert len(chunks) == 4 and chunks[1].split()[0] == "150"
 
 
-# ------------------------------------------------------------------ search helpers
 def test_openalex_abstract_reconstruction():
     assert _openalex_abstract({"world": [1], "hello": [0], "again": [2]}) == "hello world again"
 
@@ -68,16 +63,14 @@ def test_normalize_url():
     assert normalize_url("http://www.Example.com/path/") == normalize_url("https://example.com/path")
 
 
-# ------------------------------------------------------------------ auth
 def test_password_hashing():
     h = hash_password("s3cret-pw")
     assert h.startswith("scrypt$") and "s3cret" not in h
     assert verify_password("s3cret-pw", h)
     assert not verify_password("wrong", h)
-    assert hash_password("s3cret-pw") != h  # salted
+    assert hash_password("s3cret-pw") != h
 
 
-# ------------------------------------------------------------------ router
 def _status_error(cls, code, headers=None):
     req = httpx.Request("POST", "https://x")
     return cls("err", response=httpx.Response(code, request=req, headers=headers or {}), body=None)
@@ -106,7 +99,7 @@ def test_router_fails_over_and_benches_rate_limited_model():
 
     assert asyncio.run(r._run(call, "fast", "t")) == "ok from groq"
     assert asyncio.run(r._run(call, "fast", "t")) == "ok from groq"
-    assert calls == ["gemini", "groq", "groq"]  # gemini's only model benched on the second call
+    assert calls == ["gemini", "groq", "groq"]
 
 
 def test_router_skips_bad_key_and_payment_required():
@@ -135,7 +128,7 @@ def test_router_falls_back_to_next_model_when_retired():
 
     assert asyncio.run(r._run(call, "fast", "t")) == "new-model"
     assert asyncio.run(r._run(call, "fast", "t")) == "new-model"
-    assert tried == ["old-model", "new-model", "new-model"]  # retired model never retried
+    assert tried == ["old-model", "new-model", "new-model"]
 
 
 def test_router_unwraps_instructor_wrapped_rate_limit():
@@ -152,7 +145,7 @@ def test_router_unwraps_instructor_wrapped_rate_limit():
         return p.name
 
     assert asyncio.run(r._run(call, "fast", "t")) == "groq"
-    assert "g1" in r._providers[0].model_benched_until  # recognised as a rate limit, not a generic error
+    assert "g1" in r._providers[0].model_benched_until
 
 
 def test_rate_limit_benches_only_that_model_and_parses_retry_delay():
@@ -162,12 +155,12 @@ def test_rate_limit_benches_only_that_model_and_parses_retry_delay():
     async def call(p, model):
         tried.append(model)
         if model == "m1":
-            raise _status_error(openai.RateLimitError, 429)  # body text checked below
+            raise _status_error(openai.RateLimitError, 429)
         return model
 
     assert asyncio.run(r._run(call, "fast", "t")) == "m2"
     p = r._providers[0]
-    assert p.benched_until == 0  # provider still usable
+    assert p.benched_until == 0
     assert "m1" not in p.ready_models("fast") and "m2" in p.ready_models("fast")
     err = _status_error(openai.RateLimitError, 429)
     err.args = ("Error code: 429 - ... Please retry in 51.119078467s.",)
@@ -180,6 +173,6 @@ def test_check_draft_rejects_degenerate_output():
     with pytest.raises(ValueError):
         agents.check_draft("Too short [1][2][3].")
     with pytest.raises(ValueError):
-        agents.check_draft(" ".join(["word"] * 300))  # no citations
+        agents.check_draft(" ".join(["word"] * 300))
     with pytest.raises(ValueError):
-        agents.check_draft(good, previous=" ".join(["w"] * 1000))  # revision shrank it
+        agents.check_draft(good, previous=" ".join(["w"] * 1000))
