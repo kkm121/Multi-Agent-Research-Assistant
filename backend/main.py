@@ -1,136 +1,93 @@
-import os
+"""FastAPI app: public REST/SSE API + the Chainlit UI mounted at `/`."""
+
+from __future__ import annotations
+
 import json
-import asyncio
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
-from typing import List, Dict, Optional
+import logging
+import os
+from typing import Literal
+
 from dotenv import load_dotenv
 
 load_dotenv()
-from ai_core.graph import research_graph
 
-app = FastAPI(title="Multi-Agent Research API")
-frontend_origins = os.environ.get(
-    "FRONTEND_ORIGINS", "http://localhost:8501,http://127.0.0.1:8501"
-).split(",")
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
+
+from ai_core.config import get_settings
+from ai_core.graph import run_research
+from ai_core.llm import get_router
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s: %(message)s")
+for noisy in ("httpx", "httpcore", "openai", "primp", "ddgs"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+logging.getLogger("instructor").setLevel(logging.CRITICAL)  # router logs failures itself
+
+app = FastAPI(title="Multi-Agent Research API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=frontend_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=[o for o in os.environ.get("FRONTEND_ORIGINS", "").split(",") if o] or ["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 
 class ResearchRequest(BaseModel):
-    topic: str
-    document_text: str = ""
+    topic: str = Field(min_length=3, max_length=500)
+    depth: Literal["quick", "deep"] = "quick"
+    document_text: str = Field(default="", max_length=2_000_000)
+    document_name: str = "document"
 
 
 @app.get("/api/health")
-def health_check():
-    return {"status": "healthy", "service": "multi-agent-research-api"}
+def health():
+    return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/providers")
+def providers():
+    s = get_settings()
+    r = get_router()
+    return {
+        "llm_providers": r.provider_names,
+        "llm_calls": dict(r.stats.calls),
+        "llm_failures": dict(r.stats.failures),
+        "search": {
+            "tavily": bool(s.tavily_api_key),
+            "duckduckgo": True,
+            "openalex": True,
+            "arxiv": True,
+            "semantic_scholar": True,
+            "wikipedia": True,
+            "jina_reader": True,
+        },
+    }
 
 
 @app.post("/api/research")
-async def run_research_sync(request: ResearchRequest):
-    topic_to_research = request.topic
-    initial_state = {
-        "topic": topic_to_research,
-        "iterations": 0,
-        "document_text": request.document_text,
-    }
-    final_report_md = "Report generation failed."
-    async for output in research_graph.astream(initial_state):
-        if "synthesis" in output:
-            report = output["synthesis"].get("report")
-            if report:
-                final_report_md = f"# {report.title}\n\n"
-                for s in report.sections:
-                    final_report_md += f"## {s.title}\n{s.content}\n\n"
-    return {"topic": request.topic, "status": "success", "report": final_report_md}
+async def research_sync(req: ResearchRequest):
+    report = None
+    async for kind, payload in run_research(req.topic, req.depth, req.document_text, req.document_name):
+        if kind == "report":
+            report = payload
+    return report.model_dump()
 
 
 @app.post("/api/research/stream")
-async def stream_research(request: ResearchRequest):
-    print(
-        f"[API] Received streaming research request for topic: '{request.topic[:50]}...'"
-    )
-    topic_to_research = request.topic
+async def research_stream(req: ResearchRequest):
+    async def events():
+        async for kind, payload in run_research(req.topic, req.depth, req.document_text, req.document_name):
+            if kind == "progress":
+                yield {"event": "progress", "data": json.dumps(payload)}
+            else:
+                yield {"event": "report", "data": payload.model_dump_json()}
+        yield {"event": "done", "data": "{}"}
 
-    async def event_generator():
-        print(f"[API] Starting LangGraph execution for '{topic_to_research[:50]}...'")
-        initial_state = {
-            "topic": topic_to_research,
-            "iterations": 0,
-            "document_text": request.document_text,
-        }
-        cached_report = None
-        try:
-            async for output in research_graph.astream(initial_state):
-                for node_name, state_update in output.items():
-                    log_msg = f"Completed node: {node_name}"
-                    if node_name == "init":
-                        personas = state_update.get("personas", [])
-                        log_msg = f"Generated {len(personas)} expert personas."
-                    elif node_name == "research":
-                        facts = state_update.get("facts", [])
-                        log_msg = f"Gathered {len(facts)} facts from the internet."
-                    elif node_name == "synthesis":
-                        log_msg = "Synthesized draft report."
-                        if "report" in state_update:
-                            cached_report = state_update["report"]
-                    elif node_name == "critique":
-                        issues = state_update.get("actionable_issues", False)
-                        log_msg = f"Critique complete. Issues found: {issues}"
-                    yield {"event": "log", "data": json.dumps({"message": log_msg})}
-                    if node_name == "critique":
-                        issues = state_update.get("actionable_issues", False)
-                        iterations = state_update.get("iterations", 0)
-                        if not issues or iterations >= 2:
-                            if cached_report:
-                                md = f"# {cached_report.title}\n\n"
-                                for s in cached_report.sections:
-                                    md += f"## {s.title}\n{s.content}\n\n"
-                                yield {
-                                    "event": "report",
-                                    "data": json.dumps(
-                                        {
-                                            "markdown": md,
-                                            "references": [
-                                                ref.model_dump()
-                                                for ref in getattr(
-                                                    cached_report, "references", []
-                                                )
-                                            ],
-                                        }
-                                    ),
-                                }
-                await asyncio.sleep(0.1)
-        except Exception as e:
-            yield {
-                "event": "log",
-                "data": json.dumps(
-                    {"message": f"Critical Error during research: {str(e)}"}
-                ),
-            }
-            yield {
-                "event": "report",
-                "data": json.dumps(
-                    {
-                        "markdown": f"# System Error\n\nThe backend encountered a critical error: {e}",
-                        "references": [],
-                    }
-                ),
-            }
-            yield {"event": "done", "data": "Finished"}
-            print(f"[API] Stream finished for '{topic_to_research[:50]}...'")
-
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(events())
 
 
-from chainlit.utils import mount_chainlit
+from chainlit.utils import mount_chainlit  # noqa: E402
 
 mount_chainlit(app=app, target="frontend/app.py", path="/")

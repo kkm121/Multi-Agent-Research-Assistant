@@ -1,13 +1,19 @@
+"""Create the SQLite schema used by Chainlit's SQLAlchemyDataLayer (+ the auth table). Idempotent."""
+
+import os
 import sqlite3
 
-schema = """
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     "id" TEXT PRIMARY KEY,
     "identifier" TEXT NOT NULL UNIQUE,
     "metadata" TEXT NOT NULL,
     "createdAt" TEXT
 );
-
 CREATE TABLE IF NOT EXISTS threads (
     "id" TEXT PRIMARY KEY,
     "createdAt" TEXT,
@@ -18,7 +24,6 @@ CREATE TABLE IF NOT EXISTS threads (
     "metadata" TEXT,
     FOREIGN KEY ("userId") REFERENCES users("id") ON DELETE CASCADE
 );
-
 CREATE TABLE IF NOT EXISTS steps (
     "id" TEXT PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -45,7 +50,6 @@ CREATE TABLE IF NOT EXISTS steps (
     "modes" TEXT,
     FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
 );
-
 CREATE TABLE IF NOT EXISTS elements (
     "id" TEXT PRIMARY KEY,
     "threadId" TEXT,
@@ -60,20 +64,50 @@ CREATE TABLE IF NOT EXISTS elements (
     "language" TEXT,
     "forId" TEXT,
     "mime" TEXT,
-    "props" TEXT
+    "props" TEXT,
+    "autoPlay" INTEGER,
+    "playerConfig" TEXT
 );
-
 CREATE TABLE IF NOT EXISTS feedbacks (
     "id" TEXT PRIMARY KEY,
     "forId" TEXT NOT NULL,
+    "threadId" TEXT,
     "value" INTEGER NOT NULL,
     "comment" TEXT
 );
+CREATE TABLE IF NOT EXISTS auth_credentials (
+    "identifier" TEXT PRIMARY KEY,
+    "password_hash" TEXT NOT NULL
+);
 """
 
-conn = sqlite3.connect("chainlit.db")
-cursor = conn.cursor()
-cursor.executescript(schema)
-conn.commit()
-conn.close()
-print("SQLite schema initialized.")
+# Columns added in newer Chainlit versions — add them to databases created by v1.
+MIGRATIONS = [
+    ("steps", "autoCollapse", "INTEGER"),
+    ("steps", "modes", "TEXT"),
+    ("elements", "props", "TEXT"),
+    ("elements", "autoPlay", "INTEGER"),
+    ("elements", "playerConfig", "TEXT"),
+    ("feedbacks", "threadId", "TEXT"),
+]
+
+
+def db_path() -> str:
+    url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///chainlit.db")
+    return url.split(":///", 1)[1] if ":///" in url else "chainlit.db"
+
+
+def main() -> None:
+    conn = sqlite3.connect(db_path())
+    conn.executescript(SCHEMA)
+    for table, col, typ in MIGRATIONS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN "{col}" {typ}')
+    conn.commit()
+    conn.close()
+    print(f"SQLite schema ready at {db_path()}")
+
+
+if __name__ == "__main__":
+    main()

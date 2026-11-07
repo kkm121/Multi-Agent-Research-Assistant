@@ -27,7 +27,15 @@ logs/
 *.log
 
 # Chainlit
-.chainlit/
+
 
 # Evaluation Results
 eval_results.txt
+
+# Chainlit: keep config, ignore generated files
+.chainlit/*
+!.chainlit/config.toml
+.files/
+server.log
+eval_results.json
+eval_report.md
