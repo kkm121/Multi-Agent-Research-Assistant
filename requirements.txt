@@ -24,4 +24,6 @@ faiss-cpu
 ragas
 datasets
 indic-nlp-library
+nltk
 aiosqlite
+greenlet

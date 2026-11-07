@@ -1,23 +1,23 @@
 import chainlit.data as cl_data
-from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 import chainlit as cl
 import json
 import urllib.parse
 import aiohttp
 import os
-
+import uuid
 _data_layer = None
 
 @cl.data_layer
 def get_data_layer():
     global _data_layer
     if _data_layer is None:
-        _data_layer = SQLAlchemyDataLayer(conninfo="sqlite+aiosqlite:///chainlit.db")
+        try:
+            from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+            _data_layer = SQLAlchemyDataLayer(conninfo="sqlite+aiosqlite:///chainlit.db")
+        except Exception as e:
+            print(f"[DATA_LAYER] SQLAlchemyDataLayer failed: {e}")
+            _data_layer = None
     return _data_layer
-
-
-import uuid
-
 
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
@@ -67,7 +67,6 @@ async def on_message(message: cl.Message):
                 if element.path.endswith(".pdf"):
                     try:
                         import pypdf
-
                         reader = pypdf.PdfReader(element.path)
                         for page in reader.pages:
                             text = page.extract_text()

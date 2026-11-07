@@ -46,10 +46,14 @@ def get_document_chunks(text: str):
     if doc_hash in _document_cache:
         return (_document_cache[doc_hash], model)
     try:
-        from indicnlp.tokenize import sentence_tokenize
-
-        sentences = sentence_tokenize.sentence_split(text, lang="en")
-    except Exception as e:
+        import nltk
+        try:
+            nltk.data.find("tokenizers/punkt_tab")
+        except LookupError:
+            nltk.download("punkt_tab", quiet=True)
+        from nltk.tokenize import sent_tokenize
+        sentences = sent_tokenize(text)
+    except Exception:
         sentences = text.split(". ")
     chunks = []
     current_chunk = []
@@ -127,9 +131,7 @@ def generate_personas(topic: str) -> PersonaList:
                 )
 
 
-def _generate_queries(
-    persona_name: str, persona_role: str, topic: str, context: str = ""
-) -> SearchQueryList:
+def _generate_queries(persona_name: str, persona_role: str, topic: str, context: str = "") -> SearchQueryList:
     messages = [
         {
             "role": "system",

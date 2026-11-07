@@ -1,11 +1,17 @@
 import os
 import sys
 import asyncio
+from types import ModuleType
+
+# Mock the vertexai import to bypass the Ragas dependency bug
+mock_module = ModuleType("langchain_community.chat_models.vertexai")
+mock_module.ChatVertexAI = None
+sys.modules["langchain_community.chat_models.vertexai"] = mock_module
 from dotenv import load_dotenv
 load_dotenv()
 from datasets import Dataset
 from ragas import evaluate
-from ragas.metrics import faithfulness, answer_relevancy
+from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
 from langchain_groq import ChatGroq
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,9 +42,23 @@ async def run_evaluation():
     except Exception as e:
         print(f"Failed to initialize Ragas evaluators: {e}")
         return
-    dataset = Dataset.from_dict({"question": [topic], "answer": [answer_text], "contexts": [contexts]})
+    ground_truth_text = (
+        "Penicillin was discovered by Alexander Fleming in 1928. "
+        "It was the first true antibiotic and revolutionized medicine by providing "
+        "an effective treatment for bacterial infections, significantly reducing mortality rates "
+        "from infectious diseases during and after WWII."
+    )
+    # Note: ragas v0.1+ uses 'ground_truth' or 'ground_truths' depending on version. 
+    # Providing both or 'ground_truth' mapped as a string/list usually handles compatibility.
+    dataset = Dataset.from_dict({
+        "question": [topic], 
+        "answer": [answer_text], 
+        "contexts": [contexts],
+        "ground_truth": [ground_truth_text],
+        "ground_truths": [[ground_truth_text]]
+    })
     try:
-        results = evaluate(dataset=dataset, metrics=[faithfulness, answer_relevancy], llm=groq_llm, embeddings=hf_embeddings)
+        results = evaluate(dataset=dataset, metrics=[faithfulness, answer_relevancy, context_precision, context_recall], llm=groq_llm, embeddings=hf_embeddings)
         print("\n=== RAGAS EVALUATION RESULTS ===")
         print(results)
         results_dict = dict(results) if hasattr(results, 'keys') else results
@@ -47,6 +67,8 @@ async def run_evaluation():
             f.write(f"Topic: {topic}\n")
             f.write(f"Faithfulness (Hallucination check): {results_dict.get('faithfulness', 'N/A')}\n")
             f.write(f"Answer Relevancy: {results_dict.get('answer_relevancy', 'N/A')}\n")
+            f.write(f"Context Precision: {results_dict.get('context_precision', 'N/A')}\n")
+            f.write(f"Context Recall: {results_dict.get('context_recall', 'N/A')}\n")
         print("\nResults successfully saved to eval_results.txt")
     except Exception as e:
         print(f"Ragas evaluation failed: {e}")

@@ -2,6 +2,7 @@ from typing import TypedDict, List, Annotated, Optional
 from langgraph.graph import StateGraph, END
 import operator
 from .models import Persona, Fact, ResearchReport, Outline
+import asyncio
 from .agents import (
     generate_personas,
     conduct_research,
@@ -9,7 +10,6 @@ from .agents import (
     critique_report,
     generate_outline,
 )
-
 
 class GraphState(TypedDict):
     topic: str
@@ -22,17 +22,12 @@ class GraphState(TypedDict):
     iterations: int
     document_text: str
 
-
 def init_research(state: GraphState):
     personas_list = generate_personas(state["topic"])
     return {"personas": personas_list.personas, "iterations": 0}
 
-
 async def research_phase(state: GraphState):
-    import asyncio
-
     all_facts = []
-
     async def run_persona(p):
         return await asyncio.to_thread(
             conduct_research,

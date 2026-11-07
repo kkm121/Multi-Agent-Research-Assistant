@@ -18,9 +18,6 @@ def jina_reader(url: str) -> str:
     try:
         jina_url = f"https://r.jina.ai/{url}"
         headers = {}
-        api_key = os.environ.get("JINA_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
         response = requests.get(jina_url, headers=headers, timeout=5)
         response.raise_for_status()
         text = response.text
