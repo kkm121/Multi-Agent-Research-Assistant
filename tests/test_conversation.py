@@ -51,7 +51,7 @@ def test_first_message_skips_router():
 
 def test_followup_cites_only_remembered_sources(monkeypatch):
     class R(FakeRouter):
-        async def text(self, messages, tier="strong", max_tokens=None, validate=None):
+        async def text(self, messages, tier="strong", max_tokens=None, validate=None, temperature=None):
             assert "400 Wh/kg" in messages[1]["content"]
             return "They reach 400 Wh/kg [1] but cost a lot [2]. Made up [7]."
 

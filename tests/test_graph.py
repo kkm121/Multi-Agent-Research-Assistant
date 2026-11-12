@@ -37,9 +37,13 @@ class FakeRouter:
         if model is Critique:
             first = self.calls.count("Critique") == 1
             return Critique(unsupported_claims=["x"] if first else [], needs_revision=first)
+        if model.__name__ == "RelevantFacts":
+            return model(ids=[])
+        if model.__name__ == "UnsupportedSentences":
+            return model(sentences=[])
         raise AssertionError(model)
 
-    async def text(self, messages, tier="strong", max_tokens=None, validate=None):
+    async def text(self, messages, tier="strong", max_tokens=None, validate=None, temperature=None):
         self.calls.append("text")
         return "Summary [1].\n\n## A\nClaim [1][2]. Invented [42]."
 

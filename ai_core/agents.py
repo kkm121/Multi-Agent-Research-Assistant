@@ -4,6 +4,8 @@ import hashlib
 import logging
 import re
 
+from pydantic import BaseModel, Field
+
 from .llm import LLMUnavailable, get_router
 from .models import (
     Critique,
@@ -111,8 +113,10 @@ async def extract_facts(topic: str, persona: Persona, sources: list[Source], max
                     f"You are {persona.name}, a {persona.role}, focusing on: {persona.focus}.\n"
                     f"Extract up to {max_facts} distinct, specific facts relevant to the topic from the sources. "
                     "Rules: each fact must be explicitly stated in the source you cite; keep numbers, dates and "
-                    "names exact; ignore navigation text, ads and off-topic content; prefer the most "
-                    "informative claims. Use the source's [id]."
+                    "names exact; ignore navigation text, ads and off-topic content. Prefer facts that directly "
+                    "answer the topic as asked (central definitions, mechanisms, key people, dates, causes and "
+                    "consequences) over narrow findings from a single study, species or experiment, unless the "
+                    "topic asks about those. Use the source's [id]."
                 ),
             },
             {"role": "user", "content": f"Topic: {topic}\n\nSources:\n{blocks}"},
@@ -195,11 +199,13 @@ async def write_report(
                     "2. Every factual sentence ends with a citation like [3] or [2][5] using the evidence ids.\n"
                     "3. Use '## ' headings for sections exactly as in the outline. Do not write a title, "
                     "a references list, or a closing summary of sources.\n"
-                    "4. Start with a 2-3 sentence executive summary paragraph before the first heading.\n"
-                    "5. If evidence is thin for a section, say so briefly instead of padding.\n"
-                    f"6. Aim for {target_words} words, using as much of the evidence as is relevant.\n"
-                    "7. Write mainly in analytical paragraphs that compare and connect findings (agreements, "
-                    "tensions, trade-offs). Use a short list or a Markdown table only where it genuinely helps."
+                    "4. Start with a 2-3 sentence paragraph that directly answers the question as asked, before "
+                    "the first heading.\n"
+                    "5. Every section must help answer the question. Leave out evidence that is off the point, "
+                    "however interesting. If evidence is thin for a section, say so briefly instead of padding.\n"
+                    f"6. Aim for {target_words} words.\n"
+                    "7. Stay close to the wording of the evidence; paraphrase only to connect findings. Write "
+                    "mainly in clear paragraphs; use a short list or table only where it genuinely helps."
                 ),
             },
             {
@@ -209,8 +215,60 @@ async def write_report(
         ],
         tier="strong",
         max_tokens=6000,
+        temperature=0.2,
         validate=lambda text: check_draft(text, previous if feedback else ""),
     )
+
+
+class UnsupportedSentences(BaseModel):
+    sentences: list[str] = Field(
+        default_factory=list,
+        description="Sentences copied exactly from the draft that the evidence does not support.",
+    )
+
+
+def _norm(sentence: str) -> str:
+    return " ".join(_CITE.sub("", sentence).lower().split()).strip(" .")
+
+
+def split_sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+(?=[A-Z\[(\"'])", text) if s.strip()]
+
+
+async def prune_unsupported(draft: str, evidence: str) -> tuple[str, int]:
+    result = await get_router().structured(
+        UnsupportedSentences,
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You verify a research report sentence by sentence against an evidence list. Return every "
+                    "sentence (copied exactly) that states something the evidence does not support: claims, "
+                    "numbers, names, dates, causes or added details that are not in the evidence. Do not return "
+                    "headings, transitions or sentences that only summarise supported points."
+                ),
+            },
+            {"role": "user", "content": f"Evidence:\n{evidence[:14000]}\n\nReport:\n{draft[:14000]}"},
+        ],
+        tier="strong",
+    )
+    targets = {_norm(s) for s in result.sentences if len(s.split()) >= 4}
+    if not targets:
+        return draft, 0
+    removed = 0
+    lines = []
+    for line in draft.split("\n"):
+        if line.lstrip().startswith("#"):
+            lines.append(line)
+            continue
+        kept = []
+        for sent in split_sentences(line):
+            if _norm(sent) in targets:
+                removed += 1
+            else:
+                kept.append(sent)
+        lines.append(" ".join(kept))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)), removed
 
 
 def check_draft(text: str, previous: str = "") -> None:
@@ -218,6 +276,9 @@ def check_draft(text: str, previous: str = "") -> None:
     cites = sum(len(re.findall(r"\d+", group)) for group in _CITE.findall(text))
     if words < 250:
         raise ValueError(f"draft too short ({words} words)")
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if first.startswith("#"):
+        raise ValueError("draft does not open with a direct answer")
     if cites < 3:
         raise ValueError(f"draft has only {cites} citations")
     body = re.sub(r"^#.*$", "", text, flags=re.M)
@@ -288,3 +349,32 @@ def finalize_citations(
         for old, new in sorted(remap.items(), key=lambda kv: kv[1])
     ]
     return body, refs, invalid
+
+
+class RelevantFacts(BaseModel):
+    ids: list[int] = Field(default_factory=list, description="Numbers of the facts that help answer the question.")
+
+
+async def filter_relevant(topic: str, statements: list[str]) -> list[int] | None:
+    numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(statements))
+    try:
+        result = await get_router().structured(
+            RelevantFacts,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Select the facts that help answer the question directly. Drop facts about narrow side "
+                        "topics, single experiments or tangents the question does not ask about. Keep all facts "
+                        "needed for a complete answer. Return their numbers."
+                    ),
+                },
+                {"role": "user", "content": f"Question: {topic}\n\nFacts:\n{numbered}"},
+            ],
+            tier="fast",
+        )
+    except Exception as e:
+        log.warning("relevance filter failed, keeping ranked facts: %s", e)
+        return None
+    keep = [i - 1 for i in dict.fromkeys(result.ids) if 1 <= i <= len(statements)]
+    return keep if len(keep) >= 4 else None

@@ -176,3 +176,20 @@ def test_check_draft_rejects_degenerate_output():
         agents.check_draft(" ".join(["word"] * 300))
     with pytest.raises(ValueError):
         agents.check_draft(good, previous=" ".join(["w"] * 1000))
+
+
+def test_prune_removes_only_flagged_sentences(monkeypatch):
+    from ai_core import llm as L
+
+    class R:
+        async def structured(self, model, messages, **kw):
+            return model(sentences=["Penicillin was discovered on Mars [2].", "too short"])
+
+    monkeypatch.setattr(L, "_router", R())
+    draft = (
+        "Intro line [1].\n\n## Section\n"
+        "Fleming found it in 1928 [1]. Penicillin was discovered on Mars [2]. It saved lives [3]."
+    )
+    out, n = asyncio.run(agents.prune_unsupported(draft, "evidence"))
+    assert n == 1
+    assert "Mars" not in out and "1928" in out and "## Section" in out and "saved lives" in out

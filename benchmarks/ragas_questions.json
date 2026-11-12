@@ -1,0 +1,26 @@
+[
+  {
+    "question": "The discovery and implications of Penicillin",
+    "ground_truth": "Penicillin was discovered by Alexander Fleming in 1928. It was the first true antibiotic and revolutionized medicine by providing an effective treatment for bacterial infections, significantly reducing mortality rates from infectious diseases during and after WWII."
+  },
+  {
+    "question": "How does photosynthesis work?",
+    "ground_truth": "Photosynthesis is the process by which plants, algae and cyanobacteria convert light energy into chemical energy. Chlorophyll in chloroplasts absorbs light. In the light-dependent reactions in the thylakoid membranes, water is split, oxygen is released, and ATP and NADPH are produced. In the Calvin cycle in the stroma, carbon dioxide is fixed into sugars using ATP and NADPH."
+  },
+  {
+    "question": "What is CRISPR-Cas9 gene editing and how does it work?",
+    "ground_truth": "CRISPR-Cas9 is a gene-editing tool adapted from a bacterial immune system. A guide RNA directs the Cas9 nuclease to a matching DNA sequence next to a PAM site, where Cas9 cuts both DNA strands. The cell repairs the break by non-homologous end joining, which can disrupt a gene, or by homology-directed repair, which can insert precise changes. Jennifer Doudna and Emmanuelle Charpentier described it as an editing tool in 2012 and received the 2020 Nobel Prize in Chemistry."
+  },
+  {
+    "question": "What caused the 2008 global financial crisis?",
+    "ground_truth": "The 2008 financial crisis was triggered by the bursting of the US housing bubble and widespread subprime mortgage lending. Risky mortgages were securitized into mortgage-backed securities and CDOs held by highly leveraged banks. Rising defaults caused large losses, the collapse of Lehman Brothers in September 2008, a credit freeze and a global recession, leading to government bailouts such as TARP."
+  },
+  {
+    "question": "What is the greenhouse effect?",
+    "ground_truth": "The greenhouse effect is the warming of Earth's surface because greenhouse gases such as carbon dioxide, methane, water vapour and nitrous oxide absorb infrared radiation emitted by the surface and re-emit it, trapping heat in the lower atmosphere. The natural effect keeps Earth about 33 degrees Celsius warmer than it would otherwise be. Human emissions, mainly from burning fossil fuels, increase greenhouse gas concentrations and cause global warming."
+  },
+  {
+    "question": "How do mRNA vaccines work?",
+    "ground_truth": "mRNA vaccines deliver messenger RNA, packaged in lipid nanoparticles, that encodes an antigen such as the SARS-CoV-2 spike protein. Cells use the mRNA to make the protein, which trains the immune system to produce antibodies and T-cell responses. The mRNA is broken down after a short time and does not enter the nucleus or alter DNA. The Pfizer-BioNTech and Moderna COVID-19 vaccines were the first widely used mRNA vaccines, authorised in 2020."
+  }
+]

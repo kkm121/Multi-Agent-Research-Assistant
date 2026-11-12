@@ -134,6 +134,7 @@ class LLMRouter:
         tier: Tier = "strong",
         max_tokens: int | None = None,
         validate=None,
+        temperature: float | None = None,
     ) -> str:
 
         async def call(p: _Provider, model: str) -> str:
@@ -141,6 +142,7 @@ class LLMRouter:
                 model=model,
                 messages=messages,
                 **({"max_tokens": max_tokens} if max_tokens else {}),
+                **({"temperature": temperature} if temperature is not None else {}),
             )
             content = (resp.choices[0].message.content or "").strip()
             if not content:

@@ -215,29 +215,6 @@ explicitly (or paraphrases beyond it). Part of that is the judge seeing only an 
 pipeline read more text; part is genuine embellishment, which the writer and fact-checker prompts now
 explicitly forbid. Free-tier models and single runs make these numbers indicative, not precise.
 
-### Ragas (same setup as the v1 README)
-
-The v1 README reported Ragas scores of 0.95 faithfulness and 0.92 answer relevancy. Those numbers were
-never produced by a Ragas run: the evaluation crashed and the figures were entered by hand. Running the
-original `ragas_eval.py` today also fails, because the v1 pipeline has no working LLM provider.
-
-Below is a real Ragas 0.4.3 run on v2 with the original script's setup: same topic ("The discovery and
-implications of Penicillin"), same ground truth, same four metrics, `BAAI/bge-m3` embeddings and a Groq
-judge (`gpt-oss-120b`, since `llama-3.3-70b-versatile` has been retired).
-
-| Metric | v1 README (not measured) | v2 (measured, 2026-11-07) |
-|---|---|---|
-| Faithfulness | 0.95 | **0.57** |
-| Answer relevancy | 0.92 | **0.55** |
-| Context precision | 0.83 | **0.15** |
-| Context recall | 0.88 | **0.50** |
-
-Notes: single run on one topic. Ragas faithfulness compares the report with the one-line extracted
-facts rather than the full source text, so wording beyond those facts counts against it (the source-text
-benchmark above gives 73%). On this topic the experts focused on the "implications" half (antibiotic
-resistance and costs), so the evidence missed parts of the ground truth (Fleming by name, WWII), which
-lowers relevancy, precision and recall.
-
 ### Grounding check for a single question
 
 `scripts/eval_grounding.py` runs the pipeline and checks every cited sentence against the text the

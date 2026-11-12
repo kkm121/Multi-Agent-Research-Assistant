@@ -22,9 +22,15 @@ log = logging.getLogger(__name__)
 RECENT_RE = re.compile(r"\b(recent|latest|newest|current|emerging|state of the art|this year|20(2[4-9]|3\d))\b", re.I)
 
 DEPTHS = {
-    "quick": {"personas": 3, "rounds": 1, "queries": 2, "facts_per_round": 6, "words": "800-1100"},
-    "deep": {"personas": 4, "rounds": 2, "queries": 2, "facts_per_round": 7, "words": "1300-1800"},
+    "quick": {"personas": 3, "rounds": 1, "queries": 2, "facts_per_round": 6, "words": "700-1000", "keep_facts": 20},
+    "deep": {"personas": 4, "rounds": 2, "queries": 2, "facts_per_round": 7, "words": "1200-1600", "keep_facts": 34},
 }
+
+CORE_PERSONA = Persona(
+    name="Core Researcher",
+    role="Reference researcher",
+    focus="The direct answer to the question: the central facts, who, what, when, how, and the main consequences",
+)
 
 
 def merge_sources(a: dict[str, Source], b: dict[str, Source]) -> dict[str, Source]:
@@ -46,6 +52,7 @@ class ResearchState(TypedDict, total=False):
     report: ResearchReport
     error: str
     prior_facts: list[Fact]
+    selected: list[Fact]
     prior_sources: dict[str, Source]
 
 
@@ -67,7 +74,7 @@ def emit(agent: str, message: str, kind: str = "info") -> None:
 async def plan(state: ResearchState) -> dict:
     cfg = DEPTHS[state.get("depth", "quick")]
     emit("Orchestrator", "Assembling an expert panel…")
-    personas = await agents.plan_personas(state["topic"], cfg["personas"])
+    personas = [CORE_PERSONA] + await agents.plan_personas(state["topic"], cfg["personas"] - 1)
     emit("Orchestrator", "Panel: " + ", ".join(f"{p.name} ({p.role})" for p in personas), "result")
     seeded = {}
     prior = state.get("prior_facts") or []
@@ -106,6 +113,9 @@ async def research(task: PersonaTask) -> dict:
         except Exception as e:
             emit(p.name, f"Query planning failed: {e}", "warn")
             break
+        if p.name == CORE_PERSONA.name and rnd == 0:
+            plan_.queries = [task["topic"]] + [q for q in plan_.queries if q != task["topic"]][:1]
+            plan_.mode = "both"
         emit(p.name, f"Round {rnd + 1}: searching {', '.join(repr(q) for q in plan_.queries)} ({plan_.mode})")
         recent = plan_.recent or bool(RECENT_RE.search(task["topic"]))
         groups = await asyncio.gather(*(search(q, plan_.mode, recent=recent) for q in plan_.queries))
@@ -158,17 +168,26 @@ async def outline(state: ResearchState) -> dict:
     facts = state.get("facts", [])
     if not facts:
         return {"error": "No evidence could be gathered. Search backends or LLM providers may be unavailable."}
-    emit("Planner", f"Organising {len(facts)} facts from {len(state.get('sources', {}))} sources into an outline…")
-    ids = agents.assign_ids(facts, state["sources"])
-    evidence = agents._evidence_block(facts, ids, state["sources"])
+    keep = DEPTHS[state.get("depth", "quick")]["keep_facts"]
+    order = await hybrid_rank(state["topic"], [f.statement for f in facts])
+    ranked = [facts[i] for i in order[: keep + 8]]
+    chosen = await agents.filter_relevant(state["topic"], [f.statement for f in ranked])
+    selected = [ranked[i] for i in sorted(chosen)][:keep] if chosen else ranked[:keep]
+    emit(
+        "Planner",
+        f"Kept the {len(selected)} most relevant of {len(facts)} facts; organising them into an outline…",
+    )
+    ids = agents.assign_ids(selected, state["sources"])
+    evidence = agents._evidence_block(selected, ids, state["sources"])
     o = await agents.make_outline(state["topic"], evidence)
     emit("Planner", "Outline: " + " → ".join(s.title for s in o.sections), "result")
-    return {"outline": o}
+    return {"outline": o, "selected": selected}
 
 
 def _evidence(state: ResearchState) -> tuple[dict[str, int], str]:
-    ids = agents.assign_ids(state["facts"], state["sources"])
-    return ids, agents._evidence_block(state["facts"], ids, state["sources"])
+    facts = state.get("selected") or state["facts"]
+    ids = agents.assign_ids(facts, state["sources"])
+    return ids, agents._evidence_block(facts, ids, state["sources"])
 
 
 async def write(state: ResearchState) -> dict:
@@ -225,8 +244,15 @@ def should_revise(state: ResearchState) -> str:
 async def finalize(state: ResearchState) -> dict:
     if state.get("error"):
         return {"report": ResearchReport(title="Research could not be completed", markdown=state["error"])}
-    ids, _ = _evidence(state)
-    body, refs, invalid = agents.finalize_citations(state["draft"], ids, state["sources"])
+    ids, evidence = _evidence(state)
+    draft = state["draft"]
+    try:
+        draft, removed = await agents.prune_unsupported(draft, evidence)
+        if removed:
+            emit("Editor", f"Removed {removed} sentence(s) the evidence does not support", "warn")
+    except LLMUnavailable:
+        pass
+    body, refs, invalid = agents.finalize_citations(draft, ids, state["sources"])
     if invalid:
         emit("Editor", f"Removed {invalid} citation(s) that pointed to no real source", "warn")
     emit("Editor", f"Final report with {len(refs)} verified references", "result")
@@ -307,5 +333,9 @@ async def run_research(
             )
     if report is None:
         report = ResearchReport(title="Research failed", markdown="The pipeline ended without a report.")
-    yield "evidence", {"facts": final.get("facts", []), "sources": final.get("sources", {})}
+    yield "evidence", {
+        "facts": final.get("facts", []),
+        "selected": final.get("selected") or final.get("facts", []),
+        "sources": final.get("sources", {}),
+    }
     yield "report", report
