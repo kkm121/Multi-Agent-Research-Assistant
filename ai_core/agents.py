@@ -199,9 +199,8 @@ async def write_report(
                     "2. Every factual sentence ends with a citation like [3] or [2][5] using the evidence ids.\n"
                     "3. Use '## ' headings for sections exactly as in the outline. Do not write a title, "
                     "a references list, or a closing summary of sources.\n"
-                    "4. Start with a 2-4 sentence paragraph, before the first heading, that directly answers "
-                    "every part of the question as asked (for 'the discovery and implications of X', cover both "
-                    "the discovery and the implications), using the question's own key terms.\n"
+                    "4. Start with a 2-3 sentence paragraph that directly answers the question as asked, before "
+                    "the first heading.\n"
                     "5. Every section must help answer the question. Leave out evidence that is off the point, "
                     "however interesting. If evidence is thin for a section, say so briefly instead of padding.\n"
                     f"6. Aim for {target_words} words.\n"
@@ -365,10 +364,9 @@ async def filter_relevant(topic: str, statements: list[str]) -> list[int] | None
                 {
                     "role": "system",
                     "content": (
-                        "Select the facts that help answer any part of the question: background, definitions, "
-                        "key people, dates, mechanisms, causes and consequences. Drop only facts that are clearly "
-                        "off the question (unrelated side topics, a single experiment's narrow detail). When in "
-                        "doubt, keep the fact. Return their numbers."
+                        "Select the facts that help answer the question directly. Drop facts about narrow side "
+                        "topics, single experiments or tangents the question does not ask about. Keep all facts "
+                        "needed for a complete answer. Return their numbers."
                     ),
                 },
                 {"role": "user", "content": f"Question: {topic}\n\nFacts:\n{numbered}"},

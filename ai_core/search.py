@@ -223,20 +223,6 @@ async def wikipedia(client: httpx.AsyncClient, query: str, n: int = 2) -> list[S
             continue
         data = s.json()
         extract = data.get("extract", "")
-        try:
-            full = await client.get(
-                "https://en.wikipedia.org/w/api.php",
-                params={
-                    "action": "query", "prop": "extracts", "explaintext": 1, "exintro": 1,
-                    "redirects": 1, "format": "json", "titles": data.get("title", key),
-                },
-            )
-            pages = full.json().get("query", {}).get("pages", {})
-            intro = next(iter(pages.values()), {}).get("extract", "")
-            if len(intro) > len(extract):
-                extract = intro[:6000]
-        except Exception:
-            pass
         if extract:
             out.append(
                 Source(

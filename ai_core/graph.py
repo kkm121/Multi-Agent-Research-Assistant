@@ -114,9 +114,7 @@ async def research(task: PersonaTask) -> dict:
             emit(p.name, f"Query planning failed: {e}", "warn")
             break
         if p.name == CORE_PERSONA.name and rnd == 0:
-            plan_.queries = [task["topic"], f"{task['topic']} overview key facts"] + [
-                q for q in plan_.queries if q != task["topic"]
-            ][:1]
+            plan_.queries = [task["topic"]] + [q for q in plan_.queries if q != task["topic"]][:1]
             plan_.mode = "both"
         emit(p.name, f"Round {rnd + 1}: searching {', '.join(repr(q) for q in plan_.queries)} ({plan_.mode})")
         recent = plan_.recent or bool(RECENT_RE.search(task["topic"]))
@@ -151,8 +149,7 @@ async def research(task: PersonaTask) -> dict:
             continue
         found = found[:10]
         try:
-            limit = cfg["facts_per_round"] + (4 if p.name == CORE_PERSONA.name else 0)
-            new_facts = await agents.extract_facts(task["topic"], p, found, limit)
+            new_facts = await agents.extract_facts(task["topic"], p, found, cfg["facts_per_round"])
         except LLMUnavailable:
             raise
         except Exception as e:
@@ -173,16 +170,9 @@ async def outline(state: ResearchState) -> dict:
         return {"error": "No evidence could be gathered. Search backends or LLM providers may be unavailable."}
     keep = DEPTHS[state.get("depth", "quick")]["keep_facts"]
     order = await hybrid_rank(state["topic"], [f.statement for f in facts])
-    core = [f for f in facts if f.persona == CORE_PERSONA.name]
-    ranked = [facts[i] for i in order if facts[i].persona != CORE_PERSONA.name][: keep + 8]
-    chosen = await agents.filter_relevant(state["topic"], [f.statement for f in ranked]) if ranked else []
-    others = [ranked[i] for i in sorted(chosen)] if chosen else ranked
-    selected, seen = [], set()
-    for f in core + others:
-        if f.statement not in seen:
-            seen.add(f.statement)
-            selected.append(f)
-    selected = selected[:keep]
+    ranked = [facts[i] for i in order[: keep + 8]]
+    chosen = await agents.filter_relevant(state["topic"], [f.statement for f in ranked])
+    selected = [ranked[i] for i in sorted(chosen)][:keep] if chosen else ranked[:keep]
     emit(
         "Planner",
         f"Kept the {len(selected)} most relevant of {len(facts)} facts; organising them into an outline…",
